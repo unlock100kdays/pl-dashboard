@@ -10,8 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Publish only the site itself — project notes and CI config stay in the
+      # repo but out of the deployed bundle. (`.assetsignore` is a Workers-assets
+      # feature; `pages deploy` ignores it, so we stage the files instead.)
+      - name: Stage site files
+        run: |
+          mkdir -p dist
+          cp index.html styles.css app.js dist/
+          ls -la dist
+
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=pl-dashboard --branch=main
+          command: pages deploy dist --project-name=pl-dashboard --branch=main
