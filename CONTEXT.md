@@ -21,18 +21,33 @@ calls. Loading it on a different browser or device shows a fresh dashboard.
 | Local source | `~/Desktop/P&L Dashboard` |
 | Live site | https://pl-dashboard-40e.pages.dev |
 | Cloudflare project | `pl-dashboard` (Workers & Pages) |
-| GitHub repo | **not created yet** — see below |
-| Deploy | direct upload via the Pages API (see `Deploying` below) |
+| GitHub repo | https://github.com/unlock100kdays/pl-dashboard |
+| Deploy | push to `main` → GitHub Actions → Cloudflare Pages (~90s) |
 
 Cloudflare project names can't contain `&` or spaces, so the slug is
 `pl-dashboard`; "P&L Dashboard" is the display name inside the app.
 
 ### Deploying
 
-`wrangler` was unusable here — the npm registry was crawling and both
+**Normal path: just `git push`.** GitHub Actions runs
+`.github/workflows/deploy.yml`, which stages `index.html` + `styles.css` +
+`app.js` into `dist/` and deploys that. Repo secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` are already set.
+
+Two things learned the hard way here:
+- **`.assetsignore` does nothing for `pages deploy`** — it's a Workers-assets
+  feature. That's why the workflow stages `dist/` instead; without it,
+  `CONTEXT.md`, `.gitignore` and `.github/` get published as static files.
+- **Pages has no `404.html`, so unknown paths fall back to `index.html` with a
+  200.** Don't read a 200 on `/CONTEXT.md` as "still published" — check the
+  response body, not the status code.
+
+### Fallback: deploying from this machine without wrangler
+
+`wrangler` was unusable locally — the npm registry was crawling and both
 `npx wrangler` and `npm i wrangler` stalled for 25+ minutes. Node's outbound
-`fetch` is also blocked in this sandbox, though `curl` works. The deploy that
-succeeded used the Pages **direct-upload API** with curl:
+`fetch` is also blocked in this sandbox, though `curl` works. The first deploy
+used the Pages **direct-upload API** with curl:
 
 1. `GET  /accounts/:acct/pages/projects/pl-dashboard/upload-token` → JWT
 2. `POST /pages/assets/check-missing`  (Bearer JWT) — `{hashes:[…]}`
@@ -43,11 +58,8 @@ succeeded used the Pages **direct-upload API** with curl:
 server treats the key as an opaque content-address, so `sha256(base64+ext)`
 truncated to 32 hex chars works fine. That's what unblocked this.
 
-`.github/workflows/deploy.yml` is already written and will work as soon as a
-GitHub repo exists — creating it via the API was blocked by a permission
-classifier in that session, and `gh` isn't installed on this machine. To finish
-the wiring: create `unlock100kdays/pl-dashboard`, push, then add repo secrets
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+Note: `gh` is not installed on this machine — use the GitHub REST API via curl,
+and PyNaCl (which *is* installed) to seal Actions secrets.
 
 ## Files
 
