@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="P&amp;L Dashboard — track every dollar flowing in and out by category, project, and employee.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0e10" media="(prefers-color-scheme: dark)">
+<title>P&amp;L Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M8 21l5-6 4 3.5L24 11' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ───────────────────────── Sidebar ───────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3.5L20 6"/></svg>
+      </span>
+      <span class="brand-text">
+        <strong>P&amp;L Dashboard</strong>
+        <em id="brandCompany">Acme Holdings</em>
+      </span>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <button class="nav-item is-active" data-view="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span>Overview</span>
+      </button>
+      <button class="nav-item" data-view="transactions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h13l-3.5-3.5"/><path d="M17 14H4l3.5 3.5"/></svg>
+        <span>Transactions</span>
+        <b class="nav-count" id="navCountTx">0</b>
+      </button>
+      <button class="nav-item" data-view="projects">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span>Projects</span>
+        <b class="nav-count" id="navCountProj">0</b>
+      </button>
+      <button class="nav-item" data-view="employees">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6"/><path d="M17.5 19a5.6 5.6 0 0 0-2-4"/></svg>
+        <span>Employees</span>
+        <b class="nav-count" id="navCountEmp">0</b>
+      </button>
+      <button class="nav-item" data-view="categories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>
+        <span>Categories</span>
+      </button>
+      <button class="nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="runway-card">
+        <span class="runway-label">Net position</span>
+        <strong id="sideNet">$0</strong>
+        <div class="runway-bar" aria-hidden="true"><i id="sideBar" style="width:50%"></i></div>
+        <span class="runway-sub" id="sideSub">No data yet</span>
+      </div>
+      <button class="ghost-btn theme-toggle" id="themeToggle" aria-label="Switch colour theme">
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M22 12h-2M4 12H2M19 5l-1.5 1.5M6.5 17.5 5 19M19 19l-1.5-1.5M6.5 6.5 5 5"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
+        <span class="theme-label">Theme</span>
+      </button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <!-- ───────────────────────── Main ───────────────────────── -->
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="menuBtn" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="topbar-title">
+        <h1 id="viewTitle">Overview</h1>
+        <p id="viewSub">Every dollar in and out, at a glance</p>
+      </div>
+      <div class="topbar-actions">
+        <label class="select-wrap" id="rangeWrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/></svg>
+          <select id="rangeSelect" aria-label="Date range">
+            <option value="all">All time</option>
+            <option value="ytd">Year to date</option>
+            <option value="12m" selected>Last 12 months</option>
+            <option value="6m">Last 6 months</option>
+            <option value="90d">Last 90 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="mtd">Month to date</option>
+          </select>
+        </label>
+        <button class="primary-btn" id="addTxBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <span>New entry</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="content" id="content">
+
+      <!-- ═══════════ OVERVIEW ═══════════ -->
+      <section class="view is-active" data-view="overview">
+
+        <div class="hero-grid">
+          <article class="card hero-card">
+            <div class="card-head">
+              <h2>Net profit</h2>
+              <span class="pill" id="heroRangeLabel">Last 12 months</span>
+            </div>
+            <p class="hero-figure" id="heroNet">$0</p>
+            <p class="hero-meta">
+              <span class="delta" id="heroDelta"><span class="delta-icon" aria-hidden="true"></span><span class="delta-text">—</span></span>
+              <span class="hero-meta-sub" id="heroDeltaSub">vs previous period</span>
+            </p>
+            <div class="hero-spark">
+              <svg id="heroSpark" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Net profit trend over the period"></svg>
+            </div>
+          </article>
+
+          <div class="tiles">
+            <article class="card tile">
+              <span class="tile-label">Money in</span>
+              <strong class="tile-value" id="tileIn">$0</strong>
+              <span class="tile-foot"><i class="dot dot-in" aria-hidden="true"></i><span id="tileInSub">0 entries</span></span>
+            </article>
+            <article class="card tile">
+              <span class="tile-label">Money out</span>
+              <strong class="tile-value" id="tileOut">$0</strong>
+              <span class="tile-foot"><i class="dot dot-out" aria-hidden="true"></i><span id="tileOutSub">0 entries</span></span>
+            </article>
+            <article class="card tile">
+              <span class="tile-label">Profit margin</span>
+              <strong class="tile-value" id="tileMargin">—</strong>
+              <span class="tile-foot"><span id="tileMarginSub">of money in</span></span>
+            </article>
+            <article class="card tile">
+              <span class="tile-label">Payroll cost</span>
+              <strong class="tile-value" id="tilePayroll">$0</strong>
+              <span class="tile-foot"><span id="tilePayrollSub">0 people on roster</span></span>
+            </article>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <article class="card chart-card">
+            <div class="card-head">
+              <div>
+                <h2>Cash flow by month</h2>
+                <p class="card-sub">Money in against money out</p>
+              </div>
+              <div class="legend" id="flowLegend">
+                <span class="legend-item"><i class="key key-in" aria-hidden="true"></i>Money in</span>
+                <span class="legend-item"><i class="key key-out" aria-hidden="true"></i>Money out</span>
+              </div>
+            </div>
+            <div class="chart-host" id="flowHost">
+              <svg id="flowChart" role="img" aria-label="Grouped columns comparing money in and money out for each month"></svg>
+              <div class="tooltip" id="flowTip" role="status" aria-live="polite"></div>
+            </div>
+            <details class="table-view">
+              <summary>View as table</summary>
+              <div class="table-scroll"><table id="flowTable"></table></div>
+            </details>
+          </article>
+
+          <article class="card chart-card">
+            <div class="card-head">
+              <div>
+                <h2>Where money goes</h2>
+                <p class="card-sub">Top expense categories</p>
+              </div>
+              <div class="seg" id="breakdownSeg" role="tablist" aria-label="Breakdown direction">
+                <button class="seg-btn is-on" data-dir="expense" role="tab" aria-selected="true">Out</button>
+                <button class="seg-btn" data-dir="income" role="tab" aria-selected="false">In</button>
+              </div>
+            </div>
+            <div class="chart-host chart-host--bars" id="catHost">
+              <svg id="catChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg>
+              <div class="tooltip" id="catTip" role="status" aria-live="polite"></div>
+            </div>
+            <details class="table-view">
+              <summary>View as table</summary>
+              <div class="table-scroll"><table id="catTable"></table></div>
+            </details>
+          </article>
+        </div>
+
+        <div class="grid-2 grid-2--wide-left">
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <h2>Profit by project</h2>
+                <p class="card-sub">Ranked by net contribution</p>
+              </div>
+              <button class="ghost-btn sm" data-goto="projects">Manage</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="projSummaryTable"></table>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <h2>Recent activity</h2>
+                <p class="card-sub">Latest 8 entries</p>
+              </div>
+              <button class="ghost-btn sm" data-goto="transactions">See all</button>
+            </div>
+            <ul class="feed" id="recentFeed"></ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════ TRANSACTIONS ═══════════ -->
+      <section class="view" data-view="transactions">
+        <article class="card">
+          <div class="filter-bar">
+            <label class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+              <input type="search" id="txSearch" placeholder="Search description, category, project…" aria-label="Search entries">
+            </label>
+            <label class="select-wrap"><select id="txTypeFilter" aria-label="Filter by direction">
+              <option value="">All directions</option><option value="income">Money in</option><option value="expense">Money out</option>
+            </select></label>
+            <label class="select-wrap"><select id="txCatFilter" aria-label="Filter by category"><option value="">All categories</option></select></label>
+            <label class="select-wrap"><select id="txProjFilter" aria-label="Filter by project"><option value="">All projects</option></select></label>
+            <button class="ghost-btn sm" id="txExport">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0 3.5-3.5M12 14l-3.5-3.5"/><path d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>
+              Export CSV
+            </button>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table sortable" id="txTable"></table>
+          </div>
+          <div class="table-foot" id="txFoot"></div>
+        </article>
+      </section>
+
+      <!-- ═══════════ PROJECTS ═══════════ -->
+      <section class="view" data-view="projects">
+        <div class="section-head">
+          <p class="section-note">Each project rolls up its own income, costs and margin.</p>
+          <button class="primary-btn sm" id="addProjBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            New project
+          </button>
+        </div>
+        <div class="proj-grid" id="projGrid"></div>
+      </section>
+
+      <!-- ═══════════ EMPLOYEES ═══════════ -->
+      <section class="view" data-view="employees">
+        <div class="tiles tiles--4 tiles--flat">
+          <article class="card tile"><span class="tile-label">Headcount</span><strong class="tile-value" id="empCount">0</strong><span class="tile-foot" id="empCountSub">0 active</span></article>
+          <article class="card tile"><span class="tile-label">Monthly salary cost</span><strong class="tile-value" id="empMonthly">$0</strong><span class="tile-foot">gross, active staff</span></article>
+          <article class="card tile"><span class="tile-label">Annualised</span><strong class="tile-value" id="empAnnual">$0</strong><span class="tile-foot">run rate</span></article>
+          <article class="card tile"><span class="tile-label">Paid in range</span><strong class="tile-value" id="empPaid">$0</strong><span class="tile-foot" id="empPaidSub">0 pay runs</span></article>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Team roster</h2>
+              <p class="card-sub">Salaries, roles and project assignment</p>
+            </div>
+            <div class="head-actions">
+              <button class="ghost-btn sm" id="runPayrollBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5z"/><circle cx="12" cy="12" r="2.4"/></svg>
+                Run payroll
+              </button>
+              <button class="primary-btn sm" id="addEmpBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Add employee
+              </button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="empTable"></table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Pay runs</h2>
+              <p class="card-sub">Each run posts a salary expense to the ledger</p>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="payrollTable"></table>
+          </div>
+        </article>
+      </section>
+
+      <!-- ═══════════ CATEGORIES ═══════════ -->
+      <section class="view" data-view="categories">
+        <div class="section-head">
+          <p class="section-note">Categories label every flow. Deleting one moves its entries to <em>Uncategorised</em>.</p>
+          <button class="primary-btn sm" id="addCatBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            New category
+          </button>
+        </div>
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-head"><div><h2>Money in</h2><p class="card-sub">Revenue categories</p></div></div>
+            <ul class="cat-list" id="catListIncome"></ul>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><h2>Money out</h2><p class="card-sub">Cost categories</p></div></div>
+            <ul class="cat-list" id="catListExpense"></ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════ SETTINGS ═══════════ -->
+      <section class="view" data-view="settings">
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-head"><div><h2>Company</h2><p class="card-sub">Shown across the dashboard</p></div></div>
+            <div class="form-grid">
+              <label class="field"><span>Company name</span><input id="setCompany" type="text" placeholder="Acme Holdings"></label>
+              <label class="field"><span>Currency</span>
+                <select id="setCurrency">
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="GBP">GBP — British Pound</option>
+                  <option value="CAD">CAD — Canadian Dollar</option>
+                  <option value="AUD">AUD — Australian Dollar</option>
+                  <option value="INR">INR — Indian Rupee</option>
+                  <option value="AED">AED — UAE Dirham</option>
+                  <option value="SGD">SGD — Singapore Dollar</option>
+                  <option value="JPY">JPY — Japanese Yen</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">Everything is stored privately in this browser — nothing is uploaded anywhere.</p>
+          </article>
+
+          <article class="card">
+            <div class="card-head"><div><h2>Your data</h2><p class="card-sub">Back it up or start fresh</p></div></div>
+            <div class="btn-row">
+              <button class="ghost-btn" id="exportJson">Download backup (JSON)</button>
+              <button class="ghost-btn" id="importJson">Restore from backup</button>
+              <button class="ghost-btn" id="exportAllCsv">Export ledger (CSV)</button>
+            </div>
+            <hr class="rule">
+            <div class="btn-row">
+              <button class="ghost-btn" id="loadDemo">Load sample data</button>
+              <button class="ghost-btn danger" id="wipeData">Erase everything</button>
+            </div>
+            <p class="hint" id="storageHint"></p>
+            <input type="file" id="importFile" accept="application/json" hidden>
+          </article>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ───────────────────────── Modals ───────────────────────── -->
+<dialog class="modal" id="txModal">
+  <form method="dialog" id="txForm">
+    <header class="modal-head">
+      <h2 id="txModalTitle">New entry</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="modal-body">
+      <div class="toggle-group" role="radiogroup" aria-label="Direction">
+        <label class="toggle toggle--in"><input type="radio" name="type" value="income" checked><span><i class="dot dot-in" aria-hidden="true"></i>Money in</span></label>
+        <label class="toggle toggle--out"><input type="radio" name="type" value="expense"><span><i class="dot dot-out" aria-hidden="true"></i>Money out</span></label>
+      </div>
+      <div class="form-grid">
+        <label class="field field--amount"><span>Amount</span>
+          <div class="amount-input"><b id="txCurSym">$</b><input name="amount" type="number" step="0.01" min="0" required placeholder="0.00" inputmode="decimal"></div>
+        </label>
+        <label class="field"><span>Date</span><input name="date" type="date" required></label>
+        <label class="field"><span>Category</span>
+          <div class="combo"><select name="category" id="txCategory" required></select></div>
+        </label>
+        <label class="field"><span>Project</span>
+          <select name="project" id="txProject"><option value="">— No project —</option></select>
+        </label>
+        <label class="field field--full"><span>Description</span><input name="description" type="text" placeholder="e.g. Invoice #204 — Q3 retainer"></label>
+        <label class="field"><span>Method</span>
+          <select name="method">
+            <option>Bank transfer</option><option>Card</option><option>Cash</option><option>Cheque</option><option>PayPal</option><option>Stripe</option><option>Other</option>
+          </select>
+        </label>
+        <label class="field"><span>Reference</span><input name="reference" type="text" placeholder="Optional"></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="txDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save entry</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--sm" id="projModal">
+  <form method="dialog" id="projForm">
+    <header class="modal-head">
+      <h2 id="projModalTitle">New project</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field field--full"><span>Project name</span><input name="name" type="text" required placeholder="e.g. Northwind Rebuild"></label>
+        <label class="field"><span>Client</span><input name="client" type="text" placeholder="Optional"></label>
+        <label class="field"><span>Status</span><select name="status"><option>Active</option><option>On hold</option><option>Completed</option><option>Archived</option></select></label>
+        <label class="field"><span>Budget</span><div class="amount-input"><b class="cur-sym">$</b><input name="budget" type="number" step="0.01" min="0" placeholder="0.00"></div></label>
+        <label class="field"><span>Start date</span><input name="startDate" type="date"></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="projDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save project</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--sm" id="empModal">
+  <form method="dialog" id="empForm">
+    <header class="modal-head">
+      <h2 id="empModalTitle">Add employee</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field"><span>Full name</span><input name="name" type="text" required placeholder="e.g. Jordan Reyes"></label>
+        <label class="field"><span>Role</span><input name="role" type="text" placeholder="e.g. Senior Developer"></label>
+        <label class="field"><span>Department</span>
+          <select name="department"><option>Engineering</option><option>Sales</option><option>Marketing</option><option>Operations</option><option>Finance</option><option>Support</option><option>Leadership</option></select>
+        </label>
+        <label class="field"><span>Employment</span><select name="status"><option>Active</option><option>On leave</option><option>Contract</option><option>Former</option></select></label>
+        <label class="field"><span>Salary</span><div class="amount-input"><b class="cur-sym">$</b><input name="salary" type="number" step="0.01" min="0" required placeholder="0.00"></div></label>
+        <label class="field"><span>Paid</span>
+          <select name="frequency"><option value="monthly">Monthly</option><option value="annual">Per year</option><option value="biweekly">Every 2 weeks</option><option value="weekly">Weekly</option><option value="hourly">Per hour</option></select>
+        </label>
+        <label class="field"><span>Assigned project</span><select name="project" id="empProject"><option value="">— Company-wide —</option></select></label>
+        <label class="field"><span>Start date</span><input name="startDate" type="date"></label>
+      </div>
+      <p class="hint" id="empCostHint"></p>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="empDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save employee</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--sm" id="catModal">
+  <form method="dialog" id="catForm">
+    <header class="modal-head">
+      <h2 id="catModalTitle">New category</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field field--full"><span>Category name</span><input name="name" type="text" required placeholder="e.g. Software subscriptions"></label>
+        <label class="field field--full"><span>Applies to</span>
+          <select name="type"><option value="expense">Money out</option><option value="income">Money in</option></select>
+        </label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="catDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save category</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--sm" id="payrollModal">
+  <form method="dialog" id="payrollForm">
+    <header class="modal-head">
+      <h2>Run payroll</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field"><span>Pay date</span><input name="date" type="date" required></label>
+        <label class="field"><span>Period</span><select name="period"><option value="monthly">One month</option><option value="biweekly">Two weeks</option><option value="weekly">One week</option></select></label>
+      </div>
+      <p class="hint">Select who to pay. Each person posts one salary expense against their assigned project.</p>
+      <ul class="payroll-list" id="payrollList"></ul>
+      <div class="payroll-total"><span>Total this run</span><strong id="payrollTotal">$0</strong></div>
+    </div>
+    <footer class="modal-foot">
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Post pay run</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--xs" id="confirmModal">
+  <form method="dialog">
+    <div class="modal-body confirm-body">
+      <h2 id="confirmTitle">Are you sure?</h2>
+      <p id="confirmText">This can't be undone.</p>
+    </div>
+    <footer class="modal-foot">
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="button" class="primary-btn danger-btn" id="confirmOk">Delete</button>
+    </footer>
+  </form>
+</dialog>
+
+<div class="toast-stack" id="toasts" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
