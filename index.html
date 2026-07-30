@@ -46,6 +46,11 @@
         <span>Employees</span>
         <b class="nav-count" id="navCountEmp">0</b>
       </button>
+      <button class="nav-item" data-view="subscriptions">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg>
+        <span>Subscriptions</span>
+        <b class="nav-count" id="navCountSub">0</b>
+      </button>
       <button class="nav-item" data-view="categories">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>
         <span>Categories</span>
@@ -93,6 +98,8 @@
             <option value="90d">Last 90 days</option>
             <option value="30d">Last 30 days</option>
             <option value="mtd">Month to date</option>
+            <option value="today">Today</option>
+            <option value="custom">Custom range…</option>
           </select>
         </label>
         <button class="primary-btn" id="addTxBtn">
@@ -148,6 +155,46 @@
         </div>
 
         <div class="grid-2">
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <h2>Profit by project</h2>
+                <p class="card-sub">Ranked by net contribution</p>
+              </div>
+              <button class="ghost-btn sm" data-goto="projects">Manage</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="projSummaryTable"></table>
+            </div>
+          </article>
+
+          <article class="card chart-card">
+            <div class="card-head">
+              <div>
+                <h2>Where money goes</h2>
+                <p class="card-sub">Top expense categories</p>
+              </div>
+              <div class="head-actions">
+                <label class="select-wrap"><select id="breakdownProject" aria-label="Filter by project"><option value="">All projects</option></select></label>
+                <div class="seg" id="breakdownSeg" role="tablist" aria-label="Breakdown direction">
+                  <button class="seg-btn is-on" data-dir="expense" role="tab" aria-selected="true">Out</button>
+                  <button class="seg-btn" data-dir="income" role="tab" aria-selected="false">In</button>
+                </div>
+              </div>
+            </div>
+            <div class="proj-stats" id="breakdownStats" style="display:none"></div>
+            <div class="chart-host chart-host--bars" id="catHost">
+              <svg id="catChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg>
+              <div class="tooltip" id="catTip" role="status" aria-live="polite"></div>
+            </div>
+            <details class="table-view">
+              <summary>View as table</summary>
+              <div class="table-scroll"><table id="catTable"></table></div>
+            </details>
+          </article>
+        </div>
+
+        <div class="grid-2 grid-2--wide-left">
           <article class="card chart-card">
             <div class="card-head">
               <div>
@@ -167,42 +214,6 @@
               <summary>View as table</summary>
               <div class="table-scroll"><table id="flowTable"></table></div>
             </details>
-          </article>
-
-          <article class="card chart-card">
-            <div class="card-head">
-              <div>
-                <h2>Where money goes</h2>
-                <p class="card-sub">Top expense categories</p>
-              </div>
-              <div class="seg" id="breakdownSeg" role="tablist" aria-label="Breakdown direction">
-                <button class="seg-btn is-on" data-dir="expense" role="tab" aria-selected="true">Out</button>
-                <button class="seg-btn" data-dir="income" role="tab" aria-selected="false">In</button>
-              </div>
-            </div>
-            <div class="chart-host chart-host--bars" id="catHost">
-              <svg id="catChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg>
-              <div class="tooltip" id="catTip" role="status" aria-live="polite"></div>
-            </div>
-            <details class="table-view">
-              <summary>View as table</summary>
-              <div class="table-scroll"><table id="catTable"></table></div>
-            </details>
-          </article>
-        </div>
-
-        <div class="grid-2 grid-2--wide-left">
-          <article class="card">
-            <div class="card-head">
-              <div>
-                <h2>Profit by project</h2>
-                <p class="card-sub">Ranked by net contribution</p>
-              </div>
-              <button class="ghost-btn sm" data-goto="projects">Manage</button>
-            </div>
-            <div class="table-scroll">
-              <table class="data-table" id="projSummaryTable"></table>
-            </div>
           </article>
 
           <article class="card">
@@ -255,6 +266,77 @@
         <div class="proj-grid" id="projGrid"></div>
       </section>
 
+      <!-- ═══════════ PROJECT DETAIL ═══════════ -->
+      <section class="view" data-view="project-detail">
+        <div class="section-head">
+          <button class="ghost-btn sm" data-goto="projects">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            All projects
+          </button>
+          <button class="ghost-btn sm" id="projDetailEdit">Edit project</button>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="pdName">—</h2>
+              <p class="card-sub" id="pdClient">—</p>
+            </div>
+            <span class="status" id="pdStatus"><i></i>Active</span>
+          </div>
+          <div class="proj-stats" id="pdFacts"></div>
+          <p class="hint" id="pdDesc" style="display:none"></p>
+        </article>
+
+        <div class="tiles tiles--4 tiles--flat">
+          <article class="card tile"><span class="tile-label">Total revenue</span><strong class="tile-value" id="pdRevenue">$0</strong><span class="tile-foot" id="pdRevenueSub">0 entries</span></article>
+          <article class="card tile"><span class="tile-label">Total expenses</span><strong class="tile-value" id="pdExpense">$0</strong><span class="tile-foot" id="pdExpenseSub">0 entries</span></article>
+          <article class="card tile"><span class="tile-label">Net profit</span><strong class="tile-value" id="pdNet">$0</strong><span class="tile-foot">all time</span></article>
+          <article class="card tile"><span class="tile-label">Profit margin</span><strong class="tile-value" id="pdMargin">—</strong><span class="tile-foot">of revenue</span></article>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Revenue vs expense</h2><p class="card-sub">Share of total activity, and net profit trend</p></div></div>
+          <div class="proj-split" id="pdSplit" style="height:10px"></div>
+          <div class="hero-spark" style="padding-top:16px">
+            <svg id="pdProfitSpark" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Net profit trend for this project"></svg>
+          </div>
+        </article>
+
+        <div class="grid-2">
+          <article class="card chart-card">
+            <div class="card-head"><div><h2>Monthly cash flow</h2><p class="card-sub">Money in against money out, all time</p></div></div>
+            <div class="chart-host" id="pdFlowHost">
+              <svg id="pdFlowChart" role="img" aria-label="Grouped columns comparing money in and money out for each month"></svg>
+              <div class="tooltip" id="pdFlowTip" role="status" aria-live="polite"></div>
+            </div>
+          </article>
+          <article class="card chart-card">
+            <div class="card-head"><div><h2>Expense by category</h2><p class="card-sub">Where this project's costs go</p></div></div>
+            <div class="chart-host chart-host--bars" id="pdCatHost">
+              <svg id="pdCatChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg>
+              <div class="tooltip" id="pdCatTip" role="status" aria-live="polite"></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Team</h2><p class="card-sub">Employees assigned to this project</p></div></div>
+          <div class="table-scroll"><table class="data-table" id="pdTeamTable"></table></div>
+        </article>
+
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-head"><div><h2>Money in</h2></div></div>
+            <div class="table-scroll"><table class="data-table" id="pdInTable"></table></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><div><h2>Money out</h2></div></div>
+            <div class="table-scroll"><table class="data-table" id="pdOutTable"></table></div>
+          </article>
+        </div>
+      </section>
+
       <!-- ═══════════ EMPLOYEES ═══════════ -->
       <section class="view" data-view="employees">
         <div class="tiles tiles--4 tiles--flat">
@@ -295,6 +377,74 @@
           </div>
           <div class="table-scroll">
             <table class="data-table" id="payrollTable"></table>
+          </div>
+        </article>
+      </section>
+
+      <!-- ═══════════ EMPLOYEE DETAIL ═══════════ -->
+      <section class="view" data-view="employee-detail">
+        <div class="section-head">
+          <button class="ghost-btn sm" data-goto="employees">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            All employees
+          </button>
+          <button class="ghost-btn sm" id="empDetailEdit">Edit employee</button>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="empDetailName">—</h2>
+              <p class="card-sub" id="empDetailRole">—</p>
+            </div>
+            <span class="status" id="empDetailStatus"><i></i>Active</span>
+          </div>
+          <div class="proj-stats" id="empDetailFacts"></div>
+        </article>
+
+        <div class="tiles tiles--4 tiles--flat">
+          <article class="card tile"><span class="tile-label">Total paid</span><strong class="tile-value" id="empDetailTotalPaid">$0</strong><span class="tile-foot" id="empDetailTotalPaidSub">All time</span></article>
+          <article class="card tile"><span class="tile-label">Average monthly</span><strong class="tile-value" id="empDetailAvg">$0</strong><span class="tile-foot">across paid months</span></article>
+          <article class="card tile"><span class="tile-label">Last payment</span><strong class="tile-value" id="empDetailLast">—</strong><span class="tile-foot" id="empDetailLastSub">—</span></article>
+          <article class="card tile"><span class="tile-label">Payments</span><strong class="tile-value" id="empDetailCount">0</strong><span class="tile-foot">salary entries</span></article>
+        </div>
+
+        <article class="card chart-card">
+          <div class="card-head"><div><h2>Payment trend</h2><p class="card-sub">Salary paid per month, all time</p></div></div>
+          <div class="chart-host" id="empTrendHost">
+            <svg id="empTrendChart" role="img" aria-label="Bar chart of salary paid per month"></svg>
+            <div class="tooltip" id="empTrendTip" role="status" aria-live="polite"></div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><div><h2>Salary history</h2><p class="card-sub">Every payment posted to the ledger</p></div></div>
+          <div class="table-scroll"><table class="data-table" id="empHistoryTable"></table></div>
+        </article>
+      </section>
+
+      <!-- ═══════════ SUBSCRIPTIONS ═══════════ -->
+      <section class="view" data-view="subscriptions">
+        <div class="tiles tiles--4 tiles--flat">
+          <article class="card tile"><span class="tile-label">Active subscriptions</span><strong class="tile-value" id="subCount">0</strong><span class="tile-foot" id="subCountSub">0 total</span></article>
+          <article class="card tile"><span class="tile-label">Monthly cost</span><strong class="tile-value" id="subMonthly">$0</strong><span class="tile-foot">normalised, active</span></article>
+          <article class="card tile"><span class="tile-label">Annualised</span><strong class="tile-value" id="subAnnual">$0</strong><span class="tile-foot">run rate</span></article>
+          <article class="card tile"><span class="tile-label">Next renewal</span><strong class="tile-value" id="subNext">—</strong><span class="tile-foot" id="subNextSub">—</span></article>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Subscriptions</h2>
+              <p class="card-sub">Recurring software &amp; platform costs</p>
+            </div>
+            <button class="primary-btn sm" id="addSubBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Add subscription
+            </button>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="subTable"></table>
           </div>
         </article>
       </section>
@@ -360,6 +510,17 @@
             <input type="file" id="importFile" accept="application/json" hidden>
           </article>
         </div>
+
+        <article class="card">
+          <div class="card-head">
+            <div><h2>Payment methods</h2><p class="card-sub">Shown in the New Entry form</p></div>
+            <button class="primary-btn sm" id="addMethodBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Add method
+            </button>
+          </div>
+          <ul class="cat-list" id="methodList"></ul>
+        </article>
       </section>
 
     </main>
@@ -391,11 +552,18 @@
         <label class="field"><span>Project</span>
           <select name="project" id="txProject"><option value="">— No project —</option></select>
         </label>
+        <label class="field" id="txEmployeeField" hidden><span>Employee</span>
+          <select name="employee" id="txEmployee"><option value="">— Select employee —</option></select>
+        </label>
+        <label class="field" id="txSubField" hidden><span>Subscription</span>
+          <select name="subscriptionId" id="txSub"><option value="">— Select subscription —</option></select>
+        </label>
+        <label class="field" id="txVendorField" hidden><span>Vendor</span>
+          <input name="vendor" type="text" placeholder="Vendor name">
+        </label>
         <label class="field field--full"><span>Description</span><input name="description" type="text" placeholder="e.g. Invoice #204 — Q3 retainer"></label>
         <label class="field"><span>Method</span>
-          <select name="method">
-            <option>Bank transfer</option><option>Card</option><option>Cash</option><option>Cheque</option><option>PayPal</option><option>Stripe</option><option>Other</option>
-          </select>
+          <select name="method" id="txMethod"></select>
         </label>
         <label class="field"><span>Reference</span><input name="reference" type="text" placeholder="Optional"></label>
       </div>
@@ -422,6 +590,8 @@
         <label class="field"><span>Status</span><select name="status"><option>Active</option><option>On hold</option><option>Completed</option><option>Archived</option></select></label>
         <label class="field"><span>Budget</span><div class="amount-input"><b class="cur-sym">$</b><input name="budget" type="number" step="0.01" min="0" placeholder="0.00"></div></label>
         <label class="field"><span>Start date</span><input name="startDate" type="date"></label>
+        <label class="field"><span>End date</span><input name="endDate" type="date"></label>
+        <label class="field field--full"><span>Description</span><input name="description" type="text" placeholder="Optional"></label>
       </div>
     </div>
     <footer class="modal-foot">
@@ -447,10 +617,20 @@
           <select name="department"><option>Engineering</option><option>Sales</option><option>Marketing</option><option>Operations</option><option>Finance</option><option>Support</option><option>Leadership</option></select>
         </label>
         <label class="field"><span>Employment</span><select name="status"><option>Active</option><option>On leave</option><option>Contract</option><option>Former</option></select></label>
-        <label class="field"><span>Salary</span><div class="amount-input"><b class="cur-sym">$</b><input name="salary" type="number" step="0.01" min="0" required placeholder="0.00"></div></label>
-        <label class="field"><span>Paid</span>
-          <select name="frequency"><option value="monthly">Monthly</option><option value="annual">Per year</option><option value="biweekly">Every 2 weeks</option><option value="weekly">Weekly</option><option value="hourly">Per hour</option></select>
+        <label class="field"><span>Salary type</span>
+          <select name="frequency">
+            <option value="monthly">Fixed — Monthly</option>
+            <option value="annual">Fixed — Per year</option>
+            <option value="biweekly">Fixed — Every 2 weeks</option>
+            <option value="weekly">Fixed — Weekly</option>
+            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
+            <option value="projectBased">Project based</option>
+            <option value="variableMonthly">Variable monthly</option>
+            <option value="freelance">Freelance</option>
+          </select>
         </label>
+        <label class="field"><span>Salary</span><div class="amount-input"><b class="cur-sym">$</b><input name="salary" type="number" step="0.01" min="0" placeholder="0.00"></div></label>
         <label class="field"><span>Assigned project</span><select name="project" id="empProject"><option value="">— Company-wide —</option></select></label>
         <label class="field"><span>Start date</span><input name="startDate" type="date"></label>
       </div>
@@ -461,6 +641,39 @@
       <span class="spacer"></span>
       <button type="button" class="ghost-btn" data-close>Cancel</button>
       <button type="submit" class="primary-btn">Save employee</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--sm" id="subModal">
+  <form method="dialog" id="subForm">
+    <header class="modal-head">
+      <h2 id="subModalTitle">New subscription</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field field--full"><span>Platform</span><input name="platform" type="text" required placeholder="e.g. Claude AI"></label>
+        <label class="field"><span>Category</span><input name="category" type="text" placeholder="e.g. AI tools"></label>
+        <label class="field"><span>Billing</span><select name="billingCycle"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+        <label class="field"><span>Amount</span><div class="amount-input"><b class="cur-sym">$</b><input name="amount" type="number" step="0.01" min="0" required placeholder="0.00"></div></label>
+        <label class="field"><span>Currency</span>
+          <select name="currency">
+            <option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CAD">CAD</option><option value="AUD">AUD</option><option value="INR">INR</option><option value="AED">AED</option><option value="SGD">SGD</option><option value="JPY">JPY</option>
+          </select>
+        </label>
+        <label class="field"><span>Renewal date</span><input name="renewalDate" type="date" required></label>
+        <label class="field"><span>Payment method</span><select name="paymentMethod" id="subMethod"></select></label>
+        <label class="field"><span>Related project</span><select name="project" id="subProject"><option value="">— No project —</option></select></label>
+        <label class="field"><span>Status</span><select name="status"><option>Active</option><option>Paused</option><option>Cancelled</option></select></label>
+        <label class="field field--full"><span>Notes</span><input name="notes" type="text" placeholder="Optional"></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="subDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save subscription</button>
     </footer>
   </form>
 </dialog>
@@ -484,6 +697,26 @@
       <span class="spacer"></span>
       <button type="button" class="ghost-btn" data-close>Cancel</button>
       <button type="submit" class="primary-btn">Save category</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--xs" id="methodModal">
+  <form method="dialog" id="methodForm">
+    <header class="modal-head">
+      <h2 id="methodModalTitle">New method</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field field--full"><span>Method name</span><input name="name" type="text" required placeholder="e.g. Wise"></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button type="button" class="ghost-btn danger" id="methodDelete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" data-close>Cancel</button>
+      <button type="submit" class="primary-btn">Save method</button>
     </footer>
   </form>
 </dialog>
@@ -521,6 +754,26 @@
       <span class="spacer"></span>
       <button type="button" class="ghost-btn" data-close>Cancel</button>
       <button type="button" class="primary-btn danger-btn" id="confirmOk">Delete</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog class="modal modal--xs" id="customRangeModal">
+  <form method="dialog" id="customRangeForm">
+    <header class="modal-head">
+      <h2>Custom date range</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </header>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field"><span>From</span><input name="start" type="date" required></label>
+        <label class="field"><span>To</span><input name="end" type="date" required></label>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <span class="spacer"></span>
+      <button type="button" class="ghost-btn" id="customRangeCancel">Cancel</button>
+      <button type="submit" class="primary-btn">Apply range</button>
     </footer>
   </form>
 </dialog>

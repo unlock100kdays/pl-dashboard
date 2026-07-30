@@ -628,6 +628,7 @@ td .empty { padding: 34px 20px; }
 .payroll-list input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex: none; }
 .payroll-list .cell-main { flex: 1; }
 .payroll-list .num { font-weight: 560; }
+.payroll-list .payroll-amt { max-width: 120px; height: 32px; flex: none; }
 .payroll-total {
   display: flex; align-items: center; justify-content: space-between;
   padding: 13px 3px 0; margin-top: 12px; border-top: 1px solid var(--line);

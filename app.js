@@ -38,6 +38,8 @@ const DEFAULT_CATEGORIES = [
   { name: 'Taxes',                 type: 'expense' },
 ];
 
+const DEFAULT_METHODS = ['Bank transfer', 'Card', 'Cash', 'Cheque', 'PayPal', 'Stripe', 'Other'];
+
 const blankState = () => ({
   settings: { company: 'My Company', currency: 'USD' },
   categories: DEFAULT_CATEGORIES.map((c) => ({ id: uid(), ...c })),
@@ -45,13 +47,20 @@ const blankState = () => ({
   employees: [],
   transactions: [],
   payruns: [],
+  subscriptions: [],
+  paymentMethods: DEFAULT_METHODS.map((name) => ({ id: uid(), name })),
 });
 
 let state = load();
 let ui = {
   view: 'overview',
   range: '12m',
+  customStart: '',
+  customEnd: '',
   breakdownDir: 'expense',
+  breakdownProject: '',
+  detailEmployeeId: '',
+  detailProjectId: '',
   txSearch: '',
   txType: '',
   txCat: '',
@@ -121,8 +130,13 @@ const monthLabelFull = (key) => {
 
 const RANGE_LABELS = {
   all: 'All time', ytd: 'Year to date', '12m': 'Last 12 months', '6m': 'Last 6 months',
-  '90d': 'Last 90 days', '30d': 'Last 30 days', mtd: 'Month to date',
+  '90d': 'Last 90 days', '30d': 'Last 30 days', mtd: 'Month to date', today: 'Today',
 };
+
+function customRangeLabel() {
+  if (!ui.customStart || !ui.customEnd) return 'Custom range';
+  return ui.customStart === ui.customEnd ? fmtDate(ui.customStart) : `${fmtDate(ui.customStart)} – ${fmtDate(ui.customEnd)}`;
+}
 
 /** Returns {start, end} as ISO date strings; start is null for "all". */
 function rangeBounds(range = ui.range) {
@@ -134,6 +148,8 @@ function rangeBounds(range = ui.range) {
     case 'all': return { start: null, end: null };
     case 'ytd': return { start: `${now.getFullYear()}-01-01`, end };
     case 'mtd': return { start: end.slice(0, 8) + '01', end };
+    case 'today': return { start: end, end };
+    case 'custom': return { start: ui.customStart || end, end: ui.customEnd || end };
     case '30d': return { start: back(30), end };
     case '90d': return { start: back(90), end };
     case '6m':  return { start: backMonths(6), end };
@@ -166,10 +182,49 @@ const projById = (id) => state.projects.find((p) => p.id === id);
 const catName  = (id) => catById(id)?.name || 'Uncategorised';
 const projName = (id) => projById(id)?.name || null;
 
-const FREQ_LABEL = { monthly: '/month', annual: '/year', biweekly: '/2 weeks', weekly: '/week', hourly: '/hour' };
-const FREQ_TO_MONTHLY = { monthly: 1, annual: 1 / 12, biweekly: 26 / 12, weekly: 52 / 12, hourly: 160 };
-const monthlyCost = (emp) => (Number(emp.salary) || 0) * (FREQ_TO_MONTHLY[emp.frequency] ?? 1);
+const FREQ_LABEL = { monthly: '/month', annual: '/year', biweekly: '/2 weeks', weekly: '/week', hourly: '/hour', daily: '/day' };
+const FREQ_SELECT_LABEL = {
+  monthly: 'Fixed — Monthly', annual: 'Fixed — Per year', biweekly: 'Fixed — Every 2 weeks', weekly: 'Fixed — Weekly',
+  hourly: 'Hourly', daily: 'Daily', projectBased: 'Project based', variableMonthly: 'Variable monthly', freelance: 'Freelance',
+};
+const FREQ_TO_MONTHLY = { monthly: 1, annual: 1 / 12, biweekly: 26 / 12, weekly: 52 / 12, hourly: 160, daily: 22 };
+// non-recurring structures: no fixed amount, so the payroll modal always asks for a per-payment figure
+const VARIABLE_FREQUENCIES = new Set(['variableMonthly', 'projectBased', 'freelance']);
+const isVariableSalary = (e) => VARIABLE_FREQUENCIES.has(e.frequency);
+const monthlyCost = (emp) => isVariableSalary(emp) ? 0 : (Number(emp.salary) || 0) * (FREQ_TO_MONTHLY[emp.frequency] ?? 1);
 const isActiveEmp = (e) => e.status === 'Active' || e.status === 'Contract' || e.status === 'On leave';
+
+const SUB_CYCLE_TO_MONTHLY = { monthly: 1, yearly: 1 / 12 };
+const monthlySubCost = (s) => (Number(s.amount) || 0) * (SUB_CYCLE_TO_MONTHLY[s.billingCycle] ?? 1);
+const isActiveSub = (s) => s.status === 'Active';
+
+/** Posts one expense transaction per elapsed billing period for every active
+ *  subscription, then advances renewalDate past today — same "generate the
+ *  ledger row, don't just add a virtual total" approach as payroll runs. */
+function advanceSubscriptions() {
+  let changed = false;
+  const today = todayISO();
+  for (const s of state.subscriptions) {
+    if (s.status !== 'Active' || !s.renewalDate) continue;
+    let guard = 0;
+    while (s.renewalDate <= today && guard++ < 60) {
+      let subCat = state.categories.find((c) => c.type === 'expense' && /subscri/i.test(c.name));
+      if (!subCat) { subCat = { id: uid(), name: 'Subscriptions', type: 'expense' }; state.categories.push(subCat); }
+      state.transactions.push({
+        id: uid(), created: Date.now(), type: 'expense', amount: Number(s.amount) || 0,
+        date: s.renewalDate, category: subCat.id, project: s.project || '',
+        description: `${s.platform} subscription`, method: s.paymentMethod || '',
+        reference: '', subscriptionId: s.id,
+      });
+      const d = new Date(s.renewalDate + 'T00:00:00');
+      if (s.billingCycle === 'yearly') d.setFullYear(d.getFullYear() + 1);
+      else d.setMonth(d.getMonth() + 1);
+      s.renewalDate = d.toISOString().slice(0, 10);
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
 
 /* ── totals ────────────────────────────────────────────── */
 function totals(list) {
@@ -178,9 +233,11 @@ function totals(list) {
   return { income, expense, net: income - expense, margin: income ? (income - expense) / income : null };
 }
 
-/** Month buckets covering the active range (or the data's own span). */
-function monthlySeries(list) {
-  const { start, end } = rangeBounds();
+/** Month buckets covering the active range (or the data's own span).
+ *  Pass bounds explicitly (e.g. {start:null,end:null}) for a full-history
+ *  series that ignores the topbar's date filter — used by detail pages. */
+function monthlySeries(list, bounds = rangeBounds()) {
+  const { start, end } = bounds;
   let from, to;
   if (start) { from = start.slice(0, 7); to = end.slice(0, 7); }
   else if (list.length) {
@@ -346,7 +403,21 @@ function drawFlowChart() {
 function drawCategoryChart() {
   const host = $('#catHost');
   const dir = ui.breakdownDir;
-  const list = txInRange().filter((t) => t.type === dir);
+  const base = txInRange().filter((t) => !ui.breakdownProject || t.project === ui.breakdownProject);
+  const list = base.filter((t) => t.type === dir);
+
+  const statsHost = $('#breakdownStats');
+  if (ui.breakdownProject) {
+    const bt = totals(base);
+    statsHost.style.display = 'grid';
+    statsHost.innerHTML =
+      `<div class="proj-stat"><span>Money in</span><b>${fmtMoney(bt.income, { compact: true })}</b></div>` +
+      `<div class="proj-stat"><span>Money out</span><b>${fmtMoney(bt.expense, { compact: true })}</b></div>` +
+      `<div class="proj-stat"><span>Net profit</span><b class="${bt.net < 0 ? 'is-negative' : ''}">${fmtMoney(bt.net, { compact: true, sign: true })}</b></div>`;
+  } else {
+    statsHost.style.display = 'none';
+    statsHost.innerHTML = '';
+  }
 
   const byCat = new Map();
   for (const t of list) {
@@ -483,9 +554,13 @@ function renderAll() {
   renderTransactions();
   renderProjects();
   renderEmployees();
+  renderSubscriptions();
   renderCategories();
+  renderPaymentMethods();
   refreshSelects();
   renderStorageHint();
+  if (ui.detailEmployeeId) renderEmployeeDetail();
+  if (ui.detailProjectId) renderProjectDetail();
 }
 
 function renderStorageHint() {
@@ -510,7 +585,7 @@ function renderOverview() {
   const list = txInRange();
   const t = totals(list);
 
-  $('#heroRangeLabel').textContent = RANGE_LABELS[ui.range];
+  $('#heroRangeLabel').textContent = ui.range === 'custom' ? customRangeLabel() : RANGE_LABELS[ui.range];
   const hero = $('#heroNet');
   hero.textContent = fmtMoney(t.net);
   hero.classList.toggle('is-negative', t.net < 0);
@@ -728,7 +803,10 @@ function renderProjects() {
     return `<article class="card proj-card" data-proj="${p.id}">
       <div class="proj-top">
         <div><div class="proj-name">${esc(p.name)}</div>${p.client ? `<div class="proj-client">${esc(p.client)}</div>` : ''}</div>
-        <span class="status status--${STATUS_CLASS[p.status] || 'off'}"><i></i>${esc(p.status || 'Active')}</span>
+        <div class="row-actions" style="opacity:1">
+          <span class="status status--${STATUS_CLASS[p.status] || 'off'}"><i></i>${esc(p.status || 'Active')}</span>
+          <button class="icon-btn" data-pedit="${p.id}" aria-label="Edit project"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>
+        </div>
       </div>
       <div>
         <div class="proj-net"><strong class="${t.net < 0 ? 'is-negative' : ''}">${fmtMoney(t.net, { compact: true, sign: true })}</strong><span>net</span></div>
@@ -749,8 +827,309 @@ function renderProjects() {
       </div>
     </article>`;
   }).join('');
-  $$('[data-proj]', grid).forEach((c) => c.addEventListener('click', () => openProj(c.dataset.proj)));
+  $$('[data-proj]', grid).forEach((c) => c.addEventListener('click', () => openProjectDetail(c.dataset.proj)));
+  $$('[data-pedit]', grid).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openProj(b.dataset.pedit); }));
 }
+
+/* ── project detail ────────────────────────────────────── */
+function openProjectDetail(id) {
+  ui.detailProjectId = id;
+  setView('project-detail');
+  renderProjectDetail();
+}
+
+function renderProjectDetail() {
+  const p = projById(ui.detailProjectId);
+  if (!p) {
+    $('#pdName').textContent = 'Project not found';
+    $('#pdClient').textContent = '';
+    $('#pdStatus').hidden = true;
+    $('#pdFacts').innerHTML = emptyBlock('Project not found', 'It may have been removed.', '<button class="ghost-btn sm" data-goto="projects">Back to projects</button>');
+    $('#pdDesc').style.display = 'none';
+    ['pdRevenue', 'pdExpense', 'pdNet'].forEach((id2) => $(`#${id2}`).textContent = '$0');
+    $('#pdMargin').textContent = '—';
+    $('#pdTeamTable').innerHTML = '';
+    $('#pdInTable').innerHTML = '';
+    $('#pdOutTable').innerHTML = '';
+    $('#pdFlowHost').innerHTML = '';
+    $('#pdCatHost').innerHTML = '';
+    $('#pdSplit').innerHTML = '';
+    $('#pdProfitSpark').innerHTML = '';
+    return;
+  }
+
+  $('#pdStatus').hidden = false;
+  $('#pdName').textContent = p.name;
+  $('#pdClient').textContent = p.client || 'No client set';
+  $('#pdStatus').className = `status status--${STATUS_CLASS[p.status] || 'off'}`;
+  $('#pdStatus').innerHTML = `<i></i>${esc(p.status || 'Active')}`;
+  if (p.description) { $('#pdDesc').style.display = ''; $('#pdDesc').textContent = p.description; }
+  else $('#pdDesc').style.display = 'none';
+
+  $('#pdFacts').innerHTML =
+    `<div class="proj-stat"><span>Budget</span><b>${p.budget ? fmtMoney(Number(p.budget)) : '—'}</b></div>` +
+    `<div class="proj-stat"><span>Start date</span><b>${p.startDate ? fmtDate(p.startDate) : '—'}</b></div>` +
+    `<div class="proj-stat"><span>End date</span><b>${p.endDate ? fmtDate(p.endDate) : '—'}</b></div>` +
+    `<div class="proj-stat"><span>Team size</span><b>${state.employees.filter((e) => e.project === p.id).length}</b></div>`;
+
+  const list = state.transactions.filter((t) => t.project === p.id);
+  const t = totals(list);
+  $('#pdRevenue').textContent = fmtMoney(t.income, { compact: true });
+  $('#pdRevenueSub').textContent = `${list.filter((x) => x.type === 'income').length} entries`;
+  $('#pdExpense').textContent = fmtMoney(t.expense, { compact: true });
+  $('#pdExpenseSub').textContent = `${list.filter((x) => x.type === 'expense').length} entries`;
+  $('#pdNet').textContent = fmtMoney(t.net, { compact: true, sign: true });
+  $('#pdNet').classList.toggle('is-negative', t.net < 0);
+  $('#pdMargin').textContent = t.margin === null ? '—' : `${(t.margin * 100).toFixed(1)}%`;
+  $('#pdMargin').classList.toggle('is-negative', t.margin !== null && t.margin < 0);
+
+  const denom = t.income + t.expense || 1;
+  $('#pdSplit').innerHTML =
+    `<i style="width:${((t.income / denom) * 100).toFixed(1)}%;background:var(--flow-in)"></i>` +
+    `<i style="width:${((t.expense / denom) * 100).toFixed(1)}%;background:var(--flow-out)"></i>`;
+
+  const team = state.employees.filter((e) => e.project === p.id);
+  const teamTable = $('#pdTeamTable');
+  teamTable.innerHTML = !team.length
+    ? `<tbody><tr><td>${emptyBlock('No one assigned', 'Assign employees to this project from the employee form.')}</td></tr></tbody>`
+    : `<thead><tr><th>Name</th><th>Role</th><th>Status</th><th class="num">Monthly cost</th></tr></thead><tbody>` +
+      team.map((e) => `<tr data-emp="${e.id}" style="cursor:pointer">
+        <td><b>${esc(e.name)}</b></td>
+        <td style="color:var(--ink-2)">${esc(e.role || '—')}</td>
+        <td><span class="status status--${e.status === 'Active' ? 'active' : e.status === 'On leave' ? 'hold' : e.status === 'Contract' ? 'done' : 'off'}"><i></i>${esc(e.status || 'Active')}</span></td>
+        <td class="num">${isVariableSalary(e) ? '—' : fmtMoney(monthlyCost(e))}</td>
+      </tr>`).join('') + `</tbody>`;
+  $$('[data-emp]', teamTable).forEach((tr) => tr.addEventListener('click', () => openEmployeeDetail(tr.dataset.emp)));
+
+  const linkLabel = (tx) => {
+    if (tx.employee) return state.employees.find((e) => e.id === tx.employee)?.name || '—';
+    if (tx.subscriptionId) return state.subscriptions.find((s) => s.id === tx.subscriptionId)?.platform || '—';
+    return tx.vendor || '—';
+  };
+  const moneyIn = list.filter((x) => x.type === 'income').sort((a, b) => b.date.localeCompare(a.date));
+  $('#pdInTable').innerHTML = !moneyIn.length
+    ? `<tbody><tr><td>${emptyBlock('No income yet', 'Money in for this project will show up here.')}</td></tr></tbody>`
+    : `<thead><tr><th>Date</th><th>Amount</th><th>Category</th><th>Method</th><th>Notes</th></tr></thead><tbody>` +
+      moneyIn.map((tx) => `<tr>
+        <td style="white-space:nowrap">${fmtDate(tx.date)}</td>
+        <td class="num amt-in">+${fmtMoney(Number(tx.amount) || 0).replace('−', '')}</td>
+        <td>${esc(catName(tx.category))}</td>
+        <td style="color:var(--ink-muted)">${esc(tx.method || '—')}</td>
+        <td style="color:var(--ink-2)">${esc(tx.description || '—')}</td>
+      </tr>`).join('') + `</tbody>`;
+
+  const moneyOut = list.filter((x) => x.type === 'expense').sort((a, b) => b.date.localeCompare(a.date));
+  $('#pdOutTable').innerHTML = !moneyOut.length
+    ? `<tbody><tr><td>${emptyBlock('No expenses yet', 'Money out for this project will show up here.')}</td></tr></tbody>`
+    : `<thead><tr><th>Date</th><th>Amount</th><th>Category</th><th>Method</th><th>Linked to</th><th>Notes</th></tr></thead><tbody>` +
+      moneyOut.map((tx) => `<tr>
+        <td style="white-space:nowrap">${fmtDate(tx.date)}</td>
+        <td class="num amt-out">−${fmtMoney(Number(tx.amount) || 0).replace('−', '')}</td>
+        <td>${esc(catName(tx.category))}</td>
+        <td style="color:var(--ink-muted)">${esc(tx.method || '—')}</td>
+        <td style="color:var(--ink-2)">${esc(linkLabel(tx))}</td>
+        <td style="color:var(--ink-2)">${esc(tx.description || '—')}</td>
+      </tr>`).join('') + `</tbody>`;
+
+  drawProjTrendChart();
+  drawProjCategoryChart();
+  drawProjProfitSpark();
+}
+
+function drawProjProfitSpark() {
+  const svg = $('#pdProfitSpark');
+  if (!svg) return;
+  const p = projById(ui.detailProjectId);
+  const list = p ? state.transactions.filter((t) => t.project === p.id) : [];
+  const data = monthlySeries(list, { start: null, end: null });
+  const W = 320, H = 64;
+  if (!p || data.length < 2) { svg.innerHTML = ''; return; }
+
+  const vals = data.map((d) => d.net);
+  const lo = Math.min(...vals, 0), hi = Math.max(...vals, 0);
+  const span = (hi - lo) || 1;
+  const x = (i) => (i / (data.length - 1)) * (W - 6) + 3;
+  const y = (v) => H - 6 - ((v - lo) / span) * (H - 12);
+  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const line = `M${pts.join('L')}`;
+  const area = `${line}L${x(data.length - 1).toFixed(1)},${y(lo).toFixed(1)}L${x(0).toFixed(1)},${y(lo).toFixed(1)}Z`;
+  const last = vals[vals.length - 1];
+  const stroke = last < 0 ? 'var(--flow-out)' : 'var(--flow-in)';
+  const zeroY = y(0);
+
+  svg.innerHTML =
+    `<path d="${area}" fill="${stroke}" opacity="0.10"/>` +
+    (lo < 0 ? `<line class="grid-line" x1="3" y1="${zeroY.toFixed(1)}" x2="${W - 3}" y2="${zeroY.toFixed(1)}"/>` : '') +
+    `<path d="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
+    `<circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;
+}
+
+/** Grouped-column monthly cash flow, all-time, scoped to one project. */
+function drawProjTrendChart() {
+  const host = $('#pdFlowHost');
+  if (!host || ui.view !== 'project-detail') return;
+  const p = projById(ui.detailProjectId);
+  const list = p ? state.transactions.filter((t) => t.project === p.id) : [];
+  const data = monthlySeries(list, { start: null, end: null });
+
+  if (!p || !data.length || !data.some((d) => d.income || d.expense)) {
+    host.onpointermove = host.onpointerleave = null;
+    host.innerHTML = emptyBlock('No entries yet', 'Add income or expenses tagged to this project to see cash flow.');
+    return;
+  }
+
+  host.innerHTML = `<svg id="pdFlowChart" role="img" aria-label="Grouped columns comparing money in and money out for each month"></svg><div class="tooltip" id="pdFlowTip" role="status" aria-live="polite"></div>`;
+  const svg = $('#pdFlowChart', host);
+  const tip = $('#pdFlowTip', host);
+  const W = host.clientWidth || 600;
+  const H = host.clientHeight || 260;
+  const pad = { t: 12, r: 8, b: 26, l: 44 };
+  const iw = Math.max(40, W - pad.l - pad.r);
+  const ih = Math.max(40, H - pad.t - pad.b);
+  const max = Math.max(...data.map((d) => Math.max(d.income, d.expense)), 1);
+  const ticks = niceTicks(max);
+  const top = ticks[ticks.length - 1];
+  const yOf = (v) => pad.t + ih - (v / top) * ih;
+
+  const band = iw / data.length;
+  const GAP = 2;
+  const barW = clamp((band - 16 - GAP) / 2, 3, 24);
+  const groupW = barW * 2 + GAP;
+
+  let g = '';
+  ticks.forEach((t) => {
+    const y = yOf(t);
+    g += `<line class="grid-line" x1="${pad.l}" y1="${y.toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    g += `<text class="axis-text" x="${pad.l - 9}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${compactAxis(t)}</text>`;
+  });
+  g += `<line class="axis-line" x1="${pad.l}" y1="${(pad.t + ih).toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${(pad.t + ih).toFixed(1)}"/>`;
+
+  const showEvery = Math.ceil(data.length / (iw / 46));
+  data.forEach((d, i) => {
+    const cx = pad.l + band * i + band / 2;
+    const x0 = cx - groupW / 2;
+    const hIn = (d.income / top) * ih;
+    const hOut = (d.expense / top) * ih;
+    g += `<rect class="hover-band" data-i="${i}" x="${(pad.l + band * i).toFixed(1)}" y="${pad.t}" width="${band.toFixed(1)}" height="${ih}" rx="6"/>`;
+    g += `<path class="bar" data-i="${i}" d="${columnPath(x0, yOf(d.income), barW, hIn)}" fill="var(--flow-in)"/>`;
+    g += `<path class="bar" data-i="${i}" d="${columnPath(x0 + barW + GAP, yOf(d.expense), barW, hOut)}" fill="var(--flow-out)"/>`;
+    if (i % showEvery === 0 || i === data.length - 1) {
+      g += `<text class="axis-text" x="${cx.toFixed(1)}" y="${(pad.t + ih + 17).toFixed(1)}" text-anchor="middle">${monthLabel(d.key)}</text>`;
+    }
+  });
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+
+  const bands = $$('.hover-band', svg);
+  const bars = $$('.bar', svg);
+  const onLeave = () => {
+    bands.forEach((b) => b.classList.remove('is-on'));
+    host.classList.remove('is-hovering');
+    tip.classList.remove('is-on');
+  };
+  host.onpointermove = (ev) => {
+    const rect = host.getBoundingClientRect();
+    if (ev.clientX - rect.left < pad.l) { onLeave(); return; }
+    const i = clamp(Math.floor(((ev.clientX - rect.left) - pad.l) / band), 0, data.length - 1);
+    const d = data[i];
+    bands.forEach((b, j) => b.classList.toggle('is-on', j === i));
+    bars.forEach((b) => b.classList.toggle('is-hot', +b.dataset.i === i));
+    host.classList.add('is-hovering');
+    tip.innerHTML =
+      `<h4>${monthLabelFull(d.key)}</h4>` +
+      `<div class="tooltip-row"><i class="key key-in"></i><span>Money in</span><b>${fmtMoney(d.income)}</b></div>` +
+      `<div class="tooltip-row"><i class="key key-out"></i><span>Money out</span><b>${fmtMoney(d.expense)}</b></div>` +
+      `<div class="tooltip-sep"></div>` +
+      `<div class="tooltip-row"><span>Net</span><b class="${d.net < 0 ? 'is-negative' : ''}">${fmtMoney(d.net, { sign: true })}</b></div>`;
+    tip.classList.add('is-on');
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    const cx = pad.l + band * i + band / 2;
+    tip.style.left = `${clamp(cx - tw / 2, 4, W - tw - 4)}px`;
+    tip.style.top = `${clamp(yOf(Math.max(d.income, d.expense)) - th - 10, 4, H - th - 4)}px`;
+  };
+  host.onpointerleave = onLeave;
+}
+
+/** Horizontal ranking bars, expense-by-category, all-time, scoped to one project. */
+function drawProjCategoryChart() {
+  const host = $('#pdCatHost');
+  if (!host || ui.view !== 'project-detail') return;
+  const p = projById(ui.detailProjectId);
+  const list = (p ? state.transactions.filter((t) => t.project === p.id) : []).filter((t) => t.type === 'expense');
+
+  const byCat = new Map();
+  for (const t of list) byCat.set(catName(t.category), (byCat.get(catName(t.category)) || 0) + (Number(t.amount) || 0));
+  let rows = [...byCat.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+  if (!p || !rows.length) {
+    host.onpointermove = host.onpointerleave = null;
+    host.style.height = '';
+    host.innerHTML = emptyBlock('Nothing to break down', 'No costs recorded for this project yet.');
+    return;
+  }
+  if (rows.length > 7) {
+    const head = rows.slice(0, 6);
+    rows = [...head, { name: 'Other', value: sum(rows.slice(6), (r) => r.value), isOther: true }];
+  }
+
+  const H = clamp(rows.length * 38, 180, 420);
+  host.style.height = `${H}px`;
+  host.innerHTML = `<svg id="pdCatChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg><div class="tooltip" id="pdCatTip" role="status" aria-live="polite"></div>`;
+  const svg = $('#pdCatChart', host);
+  const tip = $('#pdCatTip', host);
+  const W = host.clientWidth || 500;
+  const labelW = clamp(Math.round(W * 0.32), 90, 168);
+  const pad = { t: 4, r: 62, b: 4, l: labelW };
+  const iw = Math.max(30, W - pad.l - pad.r);
+  const ih = H - pad.t - pad.b;
+  const max = Math.max(...rows.map((r) => r.value), 1);
+  const band = ih / rows.length;
+  const barH = clamp(band - 12, 6, 24);
+  const ramp = ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6'];
+  const total = sum(rows, (r) => r.value);
+
+  let g = '';
+  rows.forEach((r, i) => {
+    const y = pad.t + band * i + (band - barH) / 2;
+    const w = (r.value / max) * iw;
+    const fill = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
+    const name = r.name.length > 22 ? r.name.slice(0, 21) + '…' : r.name;
+    g += `<text class="cat-name" x="${pad.l - 12}" y="${(y + barH / 2 + 4).toFixed(1)}" text-anchor="end">${esc(name)}</text>`;
+    g += `<rect class="hover-band" data-i="${i}" x="0" y="${(pad.t + band * i).toFixed(1)}" width="${W}" height="${band.toFixed(1)}" rx="6"/>`;
+    g += `<path class="bar" data-i="${i}" d="${rowPath(pad.l, y, w, barH)}" fill="${fill}"/>`;
+    g += `<text class="bar-label" x="${(pad.l + w + 9).toFixed(1)}" y="${(y + barH / 2 + 4).toFixed(1)}">${fmtMoney(r.value, { compact: true })}</text>`;
+  });
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+
+  const bars = $$('.bar', svg);
+  const bands = $$('.hover-band', svg);
+  host.onpointermove = (ev) => {
+    const rect = host.getBoundingClientRect();
+    const i = clamp(Math.floor(((ev.clientY - rect.top) - pad.t) / band), 0, rows.length - 1);
+    const r = rows[i];
+    bands.forEach((b, j) => b.classList.toggle('is-on', j === i));
+    bars.forEach((b) => b.classList.toggle('is-hot', +b.dataset.i === i));
+    host.classList.add('is-hovering');
+    const share = total ? (r.value / total) * 100 : 0;
+    tip.innerHTML = `<h4>${esc(r.name)}</h4>` +
+      `<div class="tooltip-row"><span>Total</span><b>${fmtMoney(r.value)}</b></div>` +
+      `<div class="tooltip-row"><span>Share</span><b>${share.toFixed(1)}%</b></div>`;
+    tip.classList.add('is-on');
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = `${clamp(ev.clientX - rect.left + 14, 4, W - tw - 4)}px`;
+    tip.style.top = `${clamp(pad.t + band * i + band / 2 - th / 2, 4, H - th - 4)}px`;
+  };
+  host.onpointerleave = () => {
+    bands.forEach((b) => b.classList.remove('is-on'));
+    host.classList.remove('is-hovering');
+    tip.classList.remove('is-on');
+  };
+}
+
+$('#projDetailEdit').addEventListener('click', () => openProj(ui.detailProjectId));
 
 /* ── employees ─────────────────────────────────────────── */
 function renderEmployees() {
@@ -774,13 +1153,17 @@ function renderEmployees() {
       `<thead><tr><th>Name</th><th>Department</th><th>Project</th><th>Status</th><th class="num">Salary</th><th class="num">Monthly cost</th><th></th></tr></thead><tbody>` +
       state.employees.map((e) => {
         const st = e.status === 'Active' ? 'active' : e.status === 'On leave' ? 'hold' : e.status === 'Contract' ? 'done' : 'off';
-        return `<tr>
+        const variable = isVariableSalary(e);
+        const salaryCell = variable
+          ? `<span style="color:var(--ink-muted)">Varies</span>`
+          : `${fmtMoney(Number(e.salary) || 0)}<small style="color:var(--ink-muted)">${FREQ_LABEL[e.frequency] || ''}</small>`;
+        return `<tr data-emp="${e.id}" style="cursor:pointer">
           <td><div class="cell-main"><b>${esc(e.name)}</b>${e.role ? `<small>${esc(e.role)}</small>` : ''}</div></td>
           <td style="color:var(--ink-2)">${esc(e.department || '—')}</td>
           <td>${e.project && projName(e.project) ? `<span class="tag tag--muted">${esc(projName(e.project))}</span>` : '<span class="tag tag--muted">Company-wide</span>'}</td>
           <td><span class="status status--${st}"><i></i>${esc(e.status || 'Active')}</span></td>
-          <td class="num">${fmtMoney(Number(e.salary) || 0)}<small style="color:var(--ink-muted)">${FREQ_LABEL[e.frequency] || ''}</small></td>
-          <td class="num">${fmtMoney(monthlyCost(e))}</td>
+          <td class="num">${salaryCell}</td>
+          <td class="num">${variable ? '—' : fmtMoney(monthlyCost(e))}</td>
           <td><div class="row-actions">
             <button class="icon-btn" data-eedit="${e.id}" aria-label="Edit employee"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>
             <button class="icon-btn" data-edel="${e.id}" aria-label="Remove employee"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M8 7l.7 12h6.6L16 7"/></svg></button>
@@ -788,8 +1171,10 @@ function renderEmployees() {
         </tr>`;
       }).join('') + `</tbody>`;
 
-    $$('[data-eedit]', table).forEach((b) => b.addEventListener('click', () => openEmp(b.dataset.eedit)));
-    $$('[data-edel]', table).forEach((b) => b.addEventListener('click', async () => {
+    $$('[data-emp]', table).forEach((tr) => tr.addEventListener('click', () => openEmployeeDetail(tr.dataset.emp)));
+    $$('[data-eedit]', table).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openEmp(b.dataset.eedit); }));
+    $$('[data-edel]', table).forEach((b) => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const emp = state.employees.find((x) => x.id === b.dataset.edel);
       if (await confirmAction(`Remove ${emp?.name || 'this employee'}?`, 'Salary expenses already posted to the ledger stay put.')) {
         state.employees = state.employees.filter((x) => x.id !== b.dataset.edel);
@@ -823,6 +1208,146 @@ function renderEmployees() {
     }));
   }
 }
+
+/* ── employee detail ───────────────────────────────────── */
+function openEmployeeDetail(id) {
+  ui.detailEmployeeId = id;
+  setView('employee-detail');
+  renderEmployeeDetail();
+}
+
+function renderEmployeeDetail() {
+  const emp = state.employees.find((e) => e.id === ui.detailEmployeeId);
+  if (!emp) {
+    $('#empDetailName').textContent = 'Employee not found';
+    $('#empDetailRole').textContent = '';
+    $('#empDetailStatus').hidden = true;
+    $('#empDetailFacts').innerHTML = emptyBlock('Employee not found', 'It may have been removed.', '<button class="ghost-btn sm" data-goto="employees">Back to employees</button>');
+    ['empDetailTotalPaid', 'empDetailAvg'].forEach((id2) => $(`#${id2}`).textContent = '$0');
+    $('#empDetailLast').textContent = '—';
+    $('#empDetailLastSub').textContent = '—';
+    $('#empDetailCount').textContent = '0';
+    $('#empHistoryTable').innerHTML = '';
+    $('#empTrendHost').innerHTML = '';
+    return;
+  }
+  $('#empDetailStatus').hidden = false;
+  $('#empDetailName').textContent = emp.name;
+  $('#empDetailRole').textContent = [emp.role, emp.department].filter(Boolean).join(' · ') || '—';
+  const st = emp.status === 'Active' ? 'active' : emp.status === 'On leave' ? 'hold' : emp.status === 'Contract' ? 'done' : 'off';
+  $('#empDetailStatus').className = `status status--${st}`;
+  $('#empDetailStatus').innerHTML = `<i></i>${esc(emp.status || 'Active')}`;
+
+  const variable = isVariableSalary(emp);
+  $('#empDetailFacts').innerHTML =
+    `<div class="proj-stat"><span>Salary type</span><b>${esc(FREQ_SELECT_LABEL[emp.frequency] || '—')}</b></div>` +
+    `<div class="proj-stat"><span>Base rate</span><b>${variable ? 'Varies' : fmtMoney(Number(emp.salary) || 0)}</b></div>` +
+    `<div class="proj-stat"><span>Project</span><b>${emp.project && projName(emp.project) ? esc(projName(emp.project)) : 'Company-wide'}</b></div>` +
+    `<div class="proj-stat"><span>Start date</span><b>${emp.startDate ? fmtDate(emp.startDate) : '—'}</b></div>`;
+
+  const history = state.transactions.filter((t) => t.employee === emp.id).sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+  const totalPaid = sum(history, (t) => Number(t.amount) || 0);
+  $('#empDetailTotalPaid').textContent = fmtMoney(totalPaid, { compact: true });
+  const months = new Set(history.map((t) => monthKey(t.date))).size;
+  $('#empDetailAvg').textContent = fmtMoney(months ? totalPaid / months : 0, { compact: true });
+  $('#empDetailLast').textContent = history.length ? fmtMoney(Number(history[0].amount) || 0, { compact: true }) : '—';
+  $('#empDetailLastSub').textContent = history.length ? fmtDate(history[0].date) : 'No payments yet';
+  $('#empDetailCount').textContent = history.length;
+
+  const table = $('#empHistoryTable');
+  if (!history.length) {
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No payments yet', 'Run payroll to post the first salary expense for this person.')}</td></tr></tbody>`;
+  } else {
+    table.innerHTML = `<thead><tr><th>Date</th><th>Reference</th><th>Project</th><th class="num">Amount</th></tr></thead><tbody>` +
+      history.map((t) => `<tr>
+        <td style="white-space:nowrap">${fmtDate(t.date)}</td>
+        <td style="color:var(--ink-2)">${esc(t.reference || '—')}</td>
+        <td>${t.project && projName(t.project) ? esc(projName(t.project)) : '—'}</td>
+        <td class="num amt-out">−${fmtMoney(Number(t.amount) || 0).replace('−', '')}</td>
+      </tr>`).join('') + `</tbody>`;
+  }
+  drawEmpTrendChart();
+}
+
+/** Single-series bar chart, all-time (ignores the topbar date filter). */
+function drawEmpTrendChart() {
+  const host = $('#empTrendHost');
+  if (!host || ui.view !== 'employee-detail') return;
+  const emp = state.employees.find((e) => e.id === ui.detailEmployeeId);
+  const list = emp ? state.transactions.filter((t) => t.employee === emp.id) : [];
+  const data = monthlySeries(list, { start: null, end: null });
+
+  if (!emp || !data.length || !data.some((d) => d.expense)) {
+    host.onpointermove = host.onpointerleave = null;
+    host.innerHTML = emptyBlock('No payments yet', 'Salary paid to this person will show up here.');
+    return;
+  }
+
+  host.innerHTML = `<svg id="empTrendChart" role="img" aria-label="Bar chart of salary paid per month"></svg><div class="tooltip" id="empTrendTip" role="status" aria-live="polite"></div>`;
+  const svg = $('#empTrendChart', host);
+  const tip = $('#empTrendTip', host);
+  const W = host.clientWidth || 600;
+  const H = host.clientHeight || 260;
+  const pad = { t: 12, r: 8, b: 26, l: 44 };
+  const iw = Math.max(40, W - pad.l - pad.r);
+  const ih = Math.max(40, H - pad.t - pad.b);
+  const max = Math.max(...data.map((d) => d.expense), 1);
+  const ticks = niceTicks(max);
+  const top = ticks[ticks.length - 1];
+  const yOf = (v) => pad.t + ih - (v / top) * ih;
+
+  const band = iw / data.length;
+  const barW = clamp(band - 16, 3, 40);
+
+  let g = '';
+  ticks.forEach((t) => {
+    const y = yOf(t);
+    g += `<line class="grid-line" x1="${pad.l}" y1="${y.toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+    g += `<text class="axis-text" x="${pad.l - 9}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${compactAxis(t)}</text>`;
+  });
+  g += `<line class="axis-line" x1="${pad.l}" y1="${(pad.t + ih).toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${(pad.t + ih).toFixed(1)}"/>`;
+
+  const showEvery = Math.ceil(data.length / (iw / 46));
+  data.forEach((d, i) => {
+    const cx = pad.l + band * i + band / 2;
+    const h = (d.expense / top) * ih;
+    g += `<rect class="hover-band" data-i="${i}" x="${(pad.l + band * i).toFixed(1)}" y="${pad.t}" width="${band.toFixed(1)}" height="${ih}" rx="6"/>`;
+    g += `<path class="bar" data-i="${i}" d="${columnPath(cx - barW / 2, yOf(d.expense), barW, h)}" fill="var(--flow-out)"/>`;
+    if (i % showEvery === 0 || i === data.length - 1) {
+      g += `<text class="axis-text" x="${cx.toFixed(1)}" y="${(pad.t + ih + 17).toFixed(1)}" text-anchor="middle">${monthLabel(d.key)}</text>`;
+    }
+  });
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+
+  const bands = $$('.hover-band', svg);
+  const bars = $$('.bar', svg);
+  const onLeave = () => {
+    bands.forEach((b) => b.classList.remove('is-on'));
+    host.classList.remove('is-hovering');
+    tip.classList.remove('is-on');
+  };
+  host.onpointermove = (ev) => {
+    const rect = host.getBoundingClientRect();
+    const xRel = ev.clientX - rect.left;
+    if (xRel < pad.l) { onLeave(); return; }
+    const i = clamp(Math.floor((xRel - pad.l) / band), 0, data.length - 1);
+    const d = data[i];
+    bands.forEach((b, j) => b.classList.toggle('is-on', j === i));
+    bars.forEach((b) => b.classList.toggle('is-hot', +b.dataset.i === i));
+    host.classList.add('is-hovering');
+    tip.innerHTML = `<h4>${monthLabelFull(d.key)}</h4><div class="tooltip-row"><span>Paid</span><b>${fmtMoney(d.expense)}</b></div>`;
+    tip.classList.add('is-on');
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    const cx = pad.l + band * i + band / 2;
+    tip.style.left = `${clamp(cx - tw / 2, 4, W - tw - 4)}px`;
+    tip.style.top = `${clamp(yOf(d.expense) - th - 10, 4, H - th - 4)}px`;
+  };
+  host.onpointerleave = onLeave;
+}
+
+$('#empDetailEdit').addEventListener('click', () => openEmp(ui.detailEmployeeId));
 
 /* ── categories ────────────────────────────────────────── */
 function renderCategories() {
@@ -859,11 +1384,171 @@ function renderCategories() {
   });
 }
 
+/* ── subscriptions ─────────────────────────────────────── */
+function renderSubscriptions() {
+  const subs = state.subscriptions;
+  $('#navCountSub').textContent = subs.length;
+  const active = subs.filter(isActiveSub);
+  $('#subCount').textContent = active.length;
+  $('#subCountSub').textContent = `${subs.length} total`;
+  const monthly = sum(active, monthlySubCost);
+  $('#subMonthly').textContent = fmtMoney(monthly, { compact: true });
+  $('#subAnnual').textContent = fmtMoney(monthly * 12, { compact: true });
+  const upcoming = [...active].filter((s) => s.renewalDate).sort((a, b) => a.renewalDate.localeCompare(b.renewalDate))[0];
+  $('#subNext').textContent = upcoming ? fmtDate(upcoming.renewalDate) : '—';
+  $('#subNextSub').textContent = upcoming ? upcoming.platform : 'No active subscriptions';
+
+  const table = $('#subTable');
+  if (!subs.length) {
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No subscriptions yet', 'Track recurring software and platform costs here — charges post to the ledger automatically on each renewal.', '<button class="primary-btn sm" id="subEmptyAdd">Add a subscription</button>')}</td></tr></tbody>`;
+    $('#subEmptyAdd')?.addEventListener('click', () => openSub());
+    return;
+  }
+  table.innerHTML =
+    `<thead><tr><th>Platform</th><th>Category</th><th class="num">Amount</th><th>Renewal</th><th>Method</th><th>Status</th><th></th></tr></thead><tbody>` +
+    [...subs].sort((a, b) => (a.renewalDate || '').localeCompare(b.renewalDate || '')).map((s) => {
+      const st = s.status === 'Active' ? 'active' : s.status === 'Paused' ? 'hold' : 'off';
+      return `<tr>
+        <td><div class="cell-main"><b>${esc(s.platform)}</b>${s.notes ? `<small>${esc(s.notes)}</small>` : ''}</div></td>
+        <td style="color:var(--ink-2)">${esc(s.category || '—')}</td>
+        <td class="num">${fmtMoney(Number(s.amount) || 0)}<small style="color:var(--ink-muted)">${s.billingCycle === 'yearly' ? '/year' : '/month'}</small></td>
+        <td style="white-space:nowrap">${s.renewalDate ? fmtDate(s.renewalDate) : '—'}</td>
+        <td style="color:var(--ink-muted)">${esc(s.paymentMethod || '—')}</td>
+        <td><span class="status status--${st}"><i></i>${esc(s.status || 'Active')}</span></td>
+        <td><div class="row-actions">
+          <button class="icon-btn" data-subedit="${s.id}" aria-label="Edit subscription"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>
+          <button class="icon-btn" data-subdel="${s.id}" aria-label="Delete subscription"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M8 7l.7 12h6.6L16 7"/></svg></button>
+        </div></td>
+      </tr>`;
+    }).join('') + `</tbody>`;
+
+  $$('[data-subedit]', table).forEach((b) => b.addEventListener('click', () => openSub(b.dataset.subedit)));
+  $$('[data-subdel]', table).forEach((b) => b.addEventListener('click', async () => {
+    const s = state.subscriptions.find((x) => x.id === b.dataset.subdel);
+    if (await confirmAction(`Delete ${s?.platform}?`, 'Past charges already posted to the ledger stay put.')) {
+      state.subscriptions = state.subscriptions.filter((x) => x.id !== b.dataset.subdel);
+      save(); renderAll(); toast('Subscription deleted');
+    }
+  }));
+}
+
+let editingSub = null;
+function openSub(id) {
+  const form = $('#subForm');
+  form.reset();
+  editingSub = id ? state.subscriptions.find((s) => s.id === id) : null;
+  $('#subModalTitle').textContent = editingSub ? 'Edit subscription' : 'New subscription';
+  $('#subDelete').hidden = !editingSub;
+  refreshSelects();
+  const el = form.elements;
+  if (editingSub) {
+    el.platform.value = editingSub.platform;
+    el.category.value = editingSub.category || '';
+    el.billingCycle.value = editingSub.billingCycle || 'monthly';
+    el.amount.value = editingSub.amount || '';
+    el.currency.value = editingSub.currency || state.settings.currency || 'USD';
+    el.renewalDate.value = editingSub.renewalDate || '';
+    $('#subMethod').value = editingSub.paymentMethod || '';
+    $('#subProject').value = editingSub.project || '';
+    el.status.value = editingSub.status || 'Active';
+    el.notes.value = editingSub.notes || '';
+  } else {
+    el.renewalDate.value = todayISO();
+    el.currency.value = state.settings.currency || 'USD';
+  }
+  $('#subModal').showModal();
+}
+
+$('#subForm').addEventListener('submit', (e) => {
+  const f = e.target.elements;
+  const platform = f.platform.value.trim();
+  if (!platform) { e.preventDefault(); toast('Give the subscription a platform name', 'warn'); return; }
+  const rec = {
+    id: editingSub?.id || uid(),
+    platform, category: f.category.value.trim(),
+    billingCycle: f.billingCycle.value, amount: Number(f.amount.value) || 0,
+    currency: f.currency.value, renewalDate: f.renewalDate.value || todayISO(),
+    paymentMethod: $('#subMethod').value || '', project: $('#subProject').value || '',
+    status: f.status.value, notes: f.notes.value.trim(),
+  };
+  if (editingSub) state.subscriptions = state.subscriptions.map((s) => (s.id === rec.id ? rec : s));
+  else state.subscriptions.push(rec);
+  advanceSubscriptions();
+  save(); renderAll(); toast(editingSub ? 'Subscription updated' : 'Subscription added');
+});
+
+$('#subDelete').addEventListener('click', async () => {
+  if (!editingSub) return;
+  if (await confirmAction(`Delete ${editingSub.platform}?`, 'Past charges already posted to the ledger stay put.')) {
+    state.subscriptions = state.subscriptions.filter((s) => s.id !== editingSub.id);
+    save(); renderAll(); $('#subModal').close(); toast('Subscription deleted');
+  }
+});
+
+$('#addSubBtn').addEventListener('click', () => openSub());
+
+/* ── payment methods ───────────────────────────────────── */
+function renderPaymentMethods() {
+  const host = $('#methodList');
+  if (!state.paymentMethods.length) {
+    host.innerHTML = `<li>${emptyBlock('No payment methods', 'Add one to start tagging how money moved.')}</li>`;
+    return;
+  }
+  host.innerHTML = state.paymentMethods.map((m) => `<li>
+    <div class="cat-info"><b>${esc(m.name)}</b></div>
+    <div class="row-actions">
+      <button class="icon-btn" data-medit="${m.id}" aria-label="Edit method"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>
+      <button class="icon-btn" data-mdel="${m.id}" aria-label="Delete method"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M8 7l.7 12h6.6L16 7"/></svg></button>
+    </div>
+  </li>`).join('');
+  $$('[data-medit]', host).forEach((b) => b.addEventListener('click', () => openMethod(b.dataset.medit)));
+  $$('[data-mdel]', host).forEach((b) => b.addEventListener('click', async () => {
+    const m = state.paymentMethods.find((x) => x.id === b.dataset.mdel);
+    if (await confirmAction(`Delete "${m?.name}"?`, 'Entries already using this method keep it as plain text.')) {
+      state.paymentMethods = state.paymentMethods.filter((x) => x.id !== b.dataset.mdel);
+      save(); renderAll(); toast('Payment method deleted');
+    }
+  }));
+}
+
+let editingMethod = null;
+function openMethod(id) {
+  const form = $('#methodForm');
+  form.reset();
+  editingMethod = id ? state.paymentMethods.find((m) => m.id === id) : null;
+  $('#methodModalTitle').textContent = editingMethod ? 'Edit method' : 'New method';
+  $('#methodDelete').hidden = !editingMethod;
+  if (editingMethod) form.elements.name.value = editingMethod.name;
+  $('#methodModal').showModal();
+}
+
+$('#methodForm').addEventListener('submit', (e) => {
+  const f = e.target.elements;
+  const name = f.name.value.trim();
+  if (!name) { e.preventDefault(); toast('Give the method a name', 'warn'); return; }
+  if (editingMethod) state.paymentMethods = state.paymentMethods.map((m) => (m.id === editingMethod.id ? { ...m, name } : m));
+  else state.paymentMethods.push({ id: uid(), name });
+  save(); renderAll(); toast(editingMethod ? 'Method updated' : 'Method added');
+});
+
+$('#methodDelete').addEventListener('click', async () => {
+  if (!editingMethod) return;
+  if (await confirmAction(`Delete "${editingMethod.name}"?`, 'Entries already using this method keep it as plain text.')) {
+    state.paymentMethods = state.paymentMethods.filter((m) => m.id !== editingMethod.id);
+    save(); renderAll(); $('#methodModal').close(); toast('Payment method deleted');
+  }
+});
+
+$('#addMethodBtn').addEventListener('click', () => openMethod());
+
 /* ── shared selects ────────────────────────────────────── */
 function refreshSelects() {
   const catOpts = (type) => state.categories.filter((c) => c.type === type)
     .map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   const projOpts = state.projects.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const methodOpts = state.paymentMethods.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('');
+  const empOpts = state.employees.map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const subOpts = state.subscriptions.filter(isActiveSub).map((s) => `<option value="${s.id}">${esc(s.platform)}</option>`).join('');
 
   const keepValue = (sel, html) => { const v = sel.value; sel.innerHTML = html; sel.value = v; };
 
@@ -872,6 +1557,12 @@ function refreshSelects() {
   keepValue($('#txProjFilter'), `<option value="">All projects</option>${projOpts}`);
   keepValue($('#txProject'), `<option value="">— No project —</option>${projOpts}`);
   keepValue($('#empProject'), `<option value="">— Company-wide —</option>${projOpts}`);
+  keepValue($('#txMethod'), methodOpts);
+  keepValue($('#subProject'), `<option value="">— No project —</option>${projOpts}`);
+  keepValue($('#subMethod'), `<option value="">— Not set —</option>${methodOpts}`);
+  keepValue($('#breakdownProject'), `<option value="">All projects</option>${projOpts}`);
+  keepValue($('#txEmployee'), `<option value="">— Select employee —</option>${empOpts}`);
+  keepValue($('#txSub'), `<option value="">— Select subscription —</option>${subOpts}`);
 }
 
 function fillTxCategories(type, selected) {
@@ -879,6 +1570,18 @@ function fillTxCategories(type, selected) {
   sel.innerHTML = state.categories.filter((c) => c.type === type)
     .map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   if (selected && sel.querySelector(`option[value="${selected}"]`)) sel.value = selected;
+  updateTxContextFields();
+}
+
+/** Shows/hides the Employee, Subscription and Vendor fields on the New
+ *  Entry form based on the selected category's name — same name-matching
+ *  approach payroll already uses to find/create "Salaries & wages". */
+function updateTxContextFields() {
+  const opt = $('#txCategory').selectedOptions[0];
+  const name = opt ? opt.textContent : '';
+  $('#txEmployeeField').hidden = !/salar/i.test(name);
+  $('#txSubField').hidden = !/subscri/i.test(name);
+  $('#txVendorField').hidden = !/vendor/i.test(name);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -907,6 +1610,9 @@ function openTx(id) {
     el.method.value = editingTx.method || 'Bank transfer';
     el.reference.value = editingTx.reference || '';
     $('#txProject').value = editingTx.project || '';
+    $('#txEmployee').value = editingTx.employee || '';
+    $('#txSub').value = editingTx.subscriptionId || '';
+    el.vendor.value = editingTx.vendor || '';
   }
   $('#txModal').showModal();
   setTimeout(() => el.amount.focus(), 50);
@@ -927,6 +1633,9 @@ $('#txForm').addEventListener('submit', (e) => {
     description: f.description.value.trim(),
     method: f.method.value,
     reference: f.reference.value.trim(),
+    employee: $('#txEmployee').value || '',
+    subscriptionId: $('#txSub').value || '',
+    vendor: f.vendor.value.trim(),
   };
   if (editingTx) state.transactions = state.transactions.map((t) => (t.id === rec.id ? { ...t, ...rec } : t));
   else state.transactions.push(rec);
@@ -935,6 +1644,7 @@ $('#txForm').addEventListener('submit', (e) => {
 });
 
 $$('#txForm input[name="type"]').forEach((r) => r.addEventListener('change', () => fillTxCategories(r.value)));
+$('#txCategory').addEventListener('change', updateTxContextFields);
 
 $('#txDelete').addEventListener('click', async () => {
   if (!editingTx) return;
@@ -958,6 +1668,8 @@ function openProj(id) {
     el.status.value = editingProj.status || 'Active';
     el.budget.value = editingProj.budget || '';
     el.startDate.value = editingProj.startDate || '';
+    el.endDate.value = editingProj.endDate || '';
+    el.description.value = editingProj.description || '';
   } else el.startDate.value = todayISO();
   $('#projModal').showModal();
 }
@@ -968,6 +1680,7 @@ $('#projForm').addEventListener('submit', (e) => {
     id: editingProj?.id || uid(),
     name: f.name.value.trim(), client: f.client.value.trim(),
     status: f.status.value, budget: Number(f.budget.value) || 0, startDate: f.startDate.value,
+    endDate: f.endDate.value, description: f.description.value.trim(),
   };
   if (!rec.name) { e.preventDefault(); toast('Give the project a name', 'warn'); return; }
   if (editingProj) state.projects = state.projects.map((p) => (p.id === rec.id ? rec : p));
@@ -1011,9 +1724,16 @@ function openEmp(id) {
 
 function updateEmpHint() {
   const f = $('#empForm').elements;
+  const variable = VARIABLE_FREQUENCIES.has(f.frequency.value);
+  f.salary.required = !variable;
+  f.salary.placeholder = variable ? 'Entered at each payment' : '0.00';
+  if (variable) {
+    $('#empCostHint').textContent = 'No fixed amount — you\'ll enter what was actually paid each time payroll runs.';
+    return;
+  }
   const m = (Number(f.salary.value) || 0) * (FREQ_TO_MONTHLY[f.frequency.value] ?? 1);
   $('#empCostHint').textContent = m
-    ? `Costs ${fmtMoney(m)} per month · ${fmtMoney(m * 12)} per year${f.frequency.value === 'hourly' ? ' (assuming 160 hours a month)' : ''}.`
+    ? `Costs ${fmtMoney(m)} per month · ${fmtMoney(m * 12)} per year${f.frequency.value === 'hourly' ? ' (assuming 160 hours a month)' : f.frequency.value === 'daily' ? ' (assuming 22 working days a month)' : ''}.`
     : 'Enter a salary to see the monthly and annual cost.';
 }
 ['input', 'change'].forEach((ev) => $('#empForm').addEventListener(ev, updateEmpHint));
@@ -1080,11 +1800,16 @@ function openPayroll() {
   const form = $('#payrollForm');
   form.elements.date.value = todayISO();
   form.elements.period.value = 'monthly';
-  $('#payrollList').innerHTML = roster.map((e) => `<li>
-    <input type="checkbox" data-pay="${e.id}" checked>
-    <div class="cell-main"><b>${esc(e.name)}</b><small>${esc(e.role || e.department || '')}${e.project && projName(e.project) ? ' · ' + esc(projName(e.project)) : ''}</small></div>
-    <span class="num" data-amt="${e.id}"></span>
-  </li>`).join('');
+  $('#payrollList').innerHTML = roster.map((e) => {
+    const variable = isVariableSalary(e);
+    return `<li>
+      <input type="checkbox" data-pay="${e.id}" checked>
+      <div class="cell-main"><b>${esc(e.name)}</b><small>${esc(e.role || e.department || '')}${e.project && projName(e.project) ? ' · ' + esc(projName(e.project)) : ''}${variable ? ' · ' + esc(FREQ_SELECT_LABEL[e.frequency] || 'Variable') : ''}</small></div>
+      ${variable
+        ? `<div class="amount-input payroll-amt"><b class="cur-sym">$</b><input type="number" step="0.01" min="0" placeholder="0.00" data-amt-input="${e.id}"></div>`
+        : `<span class="num" data-amt="${e.id}"></span>`}
+    </li>`;
+  }).join('');
   updatePayrollTotal();
   $('#payrollModal').showModal();
 }
@@ -1095,9 +1820,14 @@ function updatePayrollTotal() {
   $$('#payrollList [data-pay]').forEach((cb) => {
     const emp = state.employees.find((e) => e.id === cb.dataset.pay);
     if (!emp) return;
-    const amt = monthlyCost(emp) * factor;
-    $(`[data-amt="${emp.id}"]`).textContent = fmtMoney(amt);
-    if (cb.checked) total += amt;
+    if (isVariableSalary(emp)) {
+      const input = $(`[data-amt-input="${emp.id}"]`);
+      if (cb.checked) total += Number(input?.value) || 0;
+    } else {
+      const amt = monthlyCost(emp) * factor;
+      $(`[data-amt="${emp.id}"]`).textContent = fmtMoney(amt);
+      if (cb.checked) total += amt;
+    }
   });
   $('#payrollTotal').textContent = fmtMoney(total);
 }
@@ -1114,11 +1844,17 @@ $('#payrollForm').addEventListener('submit', (e) => {
 
   const runId = uid();
   const date = f.date.value || todayISO();
-  let total = 0;
+  let total = 0, skipped = 0;
   picked.forEach((id) => {
     const emp = state.employees.find((x) => x.id === id);
     if (!emp) return;
-    const amount = Math.round(monthlyCost(emp) * factor * 100) / 100;
+    let amount;
+    if (isVariableSalary(emp)) {
+      amount = Math.round((Number($(`[data-amt-input="${id}"]`)?.value) || 0) * 100) / 100;
+      if (!amount) { skipped++; return; }
+    } else {
+      amount = Math.round(monthlyCost(emp) * factor * 100) / 100;
+    }
     total += amount;
     state.transactions.push({
       id: uid(), created: Date.now(), type: 'expense', amount, date,
@@ -1127,9 +1863,11 @@ $('#payrollForm').addEventListener('submit', (e) => {
       reference: `Payroll ${PERIOD_LABEL[f.period.value]}`, payrun: runId, employee: emp.id,
     });
   });
-  state.payruns.push({ id: runId, date, period: PERIOD_LABEL[f.period.value], count: picked.length, total });
+  if (!total) { e.preventDefault(); toast('Enter an amount for at least one person', 'warn'); return; }
+  const count = picked.length - skipped;
+  state.payruns.push({ id: runId, date, period: PERIOD_LABEL[f.period.value], count, total });
   save(); renderAll();
-  toast(`Payroll posted — ${fmtMoney(total)} across ${picked.length} ${picked.length === 1 ? 'person' : 'people'}`);
+  toast(`Payroll posted — ${fmtMoney(total)} across ${count} ${count === 1 ? 'person' : 'people'}`);
 });
 
 /* confirm dialog as a promise */
@@ -1197,6 +1935,16 @@ function seedDemo() {
     { id: uid(), name: 'Tomas Vidal',    role: 'QA Contractor',      department: 'Engineering', status: 'Contract', salary: 78,    frequency: 'hourly',  project: P[1], startDate: '2026-02-02' },
   ];
 
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  s.subscriptions = [
+    { id: uid(), platform: 'Claude AI',  category: 'AI tools',      billingCycle: 'monthly', amount: 200, currency: s.settings.currency, renewalDate: daysAgo(3),  paymentMethod: 'Card',   project: '',   status: 'Active', notes: '' },
+    { id: uid(), platform: 'Cloudflare', category: 'Hosting',       billingCycle: 'monthly', amount: 25,  currency: s.settings.currency, renewalDate: daysAgo(10), paymentMethod: 'Card',   project: P[1], status: 'Active', notes: '' },
+    { id: uid(), platform: 'OpenAI',     category: 'AI tools',      billingCycle: 'monthly', amount: 120, currency: s.settings.currency, renewalDate: daysAgo(1),  paymentMethod: 'Card',   project: '',   status: 'Active', notes: '' },
+    { id: uid(), platform: 'GitHub',     category: 'Dev tools',     billingCycle: 'monthly', amount: 44,  currency: s.settings.currency, renewalDate: daysAgo(15), paymentMethod: 'Card',   project: '',   status: 'Active', notes: 'Team plan' },
+    { id: uid(), platform: 'Figma',      category: 'Design tools',  billingCycle: 'yearly',  amount: 540, currency: s.settings.currency, renewalDate: daysAgo(40), paymentMethod: 'PayPal', project: '',   status: 'Active', notes: '' },
+    { id: uid(), platform: 'Slack',      category: 'Productivity',  billingCycle: 'monthly', amount: 80,  currency: s.settings.currency, renewalDate: daysAgo(6),  paymentMethod: 'Card',   project: '',   status: 'Paused', notes: '' },
+  ];
+
   // 14 months of plausible activity
   const now = new Date();
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -1228,6 +1976,7 @@ function seedDemo() {
   }
 
   state = s;
+  advanceSubscriptions();
   save();
 }
 
@@ -1239,6 +1988,9 @@ const VIEW_META = {
   transactions: ['Transactions', 'The full ledger of money movements'],
   projects:     ['Projects',     'Profitability broken out per job'],
   employees:    ['Employees',    'Roster, salary cost and payroll'],
+  subscriptions: ['Subscriptions', 'Recurring software & platform costs'],
+  'employee-detail': ['Employee', 'Salary history and payment trend'],
+  'project-detail': ['Project', 'Financial detail for this project'],
   categories:   ['Categories',   'How money is labelled on the way in and out'],
   settings:     ['Settings',     'Company details, backups and data'],
 };
@@ -1250,10 +2002,13 @@ function setView(name) {
   const [title, sub] = VIEW_META[name] || VIEW_META.overview;
   $('#viewTitle').textContent = title;
   $('#viewSub').textContent = sub;
-  $('#rangeWrap').style.display = name === 'settings' || name === 'categories' ? 'none' : '';
+  const HIDE_RANGE = new Set(['settings', 'categories', 'subscriptions', 'employee-detail', 'project-detail']);
+  $('#rangeWrap').style.display = HIDE_RANGE.has(name) ? 'none' : '';
   closeSidebar();
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (name === 'overview') requestAnimationFrame(() => { drawFlowChart(); drawCategoryChart(); drawSparkline(); });
+  if (name === 'employee-detail') requestAnimationFrame(drawEmpTrendChart);
+  if (name === 'project-detail') requestAnimationFrame(() => { drawProjTrendChart(); drawProjCategoryChart(); });
 }
 
 $$('.nav-item').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -1302,7 +2057,35 @@ $('#addEmpBtn').addEventListener('click', () => openEmp());
 $('#addCatBtn').addEventListener('click', () => openCat());
 $('#runPayrollBtn').addEventListener('click', openPayroll);
 
-$('#rangeSelect').addEventListener('change', (e) => { ui.range = e.target.value; renderAll(); });
+let rangeSelectPrevValue = $('#rangeSelect').value;
+let customRangeApplied = false;
+$('#rangeSelect').addEventListener('change', (e) => {
+  if (e.target.value === 'custom') {
+    const f = $('#customRangeForm').elements;
+    f.start.value = ui.customStart || rangeBounds('30d').start;
+    f.end.value = ui.customEnd || todayISO();
+    $('#customRangeModal').showModal();
+    return;
+  }
+  rangeSelectPrevValue = e.target.value;
+  ui.range = e.target.value;
+  renderAll();
+});
+$('#customRangeForm').addEventListener('submit', (e) => {
+  const f = e.target.elements;
+  if (!f.start.value || !f.end.value || f.start.value > f.end.value) {
+    e.preventDefault(); toast('Pick a valid start and end date', 'warn'); return;
+  }
+  ui.customStart = f.start.value; ui.customEnd = f.end.value; ui.range = 'custom';
+  $('#rangeSelect').value = 'custom'; rangeSelectPrevValue = 'custom';
+  customRangeApplied = true;
+  renderAll();
+});
+$('#customRangeModal').addEventListener('close', () => {
+  if (!customRangeApplied) $('#rangeSelect').value = rangeSelectPrevValue;
+  customRangeApplied = false;
+});
+$('#customRangeCancel').addEventListener('click', () => $('#customRangeModal').close());
 $('#txSearch').addEventListener('input', (e) => { ui.txSearch = e.target.value; renderTransactions(); });
 $('#txTypeFilter').addEventListener('change', (e) => { ui.txType = e.target.value; renderTransactions(); });
 $('#txCatFilter').addEventListener('change', (e) => { ui.txCat = e.target.value; renderTransactions(); });
@@ -1319,6 +2102,7 @@ $$('#breakdownSeg .seg-btn').forEach((b) => b.addEventListener('click', () => {
   $$('#breakdownSeg .seg-btn').forEach((x) => { x.classList.toggle('is-on', x === b); x.setAttribute('aria-selected', x === b); });
   drawCategoryChart();
 }));
+$('#breakdownProject').addEventListener('change', (e) => { ui.breakdownProject = e.target.value; drawCategoryChart(); });
 
 /* settings */
 $('#setCompany').addEventListener('input', (e) => { state.settings.company = e.target.value; save(); $('#brandCompany').textContent = e.target.value || 'My Company'; });
@@ -1386,6 +2170,7 @@ if (!state.transactions.length && !state.employees.length && !state.projects.len
     && !localStorage.getItem(STORE_KEY)) {
   seedDemo();           // first visit: show the dashboard with a worked example
 }
+advanceSubscriptions();
 hydrateSettings();
 renderAll();
 setView('overview');
