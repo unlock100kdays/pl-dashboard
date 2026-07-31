@@ -300,6 +300,55 @@ const compactAxis = (n) => {
   return String(Math.round(n));
 };
 
+/** Cubic-Bézier curve through a series of [x,y] points (Catmull-Rom
+ *  style tangents) — smooth premium curves instead of straight polyline
+ *  segments, used by every trend-line chart. */
+function smoothPath(pts) {
+  if (pts.length < 2) return '';
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+/** Sets up the "draw itself on" stroke animation — measures the real
+ *  path length after insertion rather than guessing a fixed value, so it
+ *  works at any chart size. */
+function animateLineDraw(pathEl) {
+  const len = pathEl.getTotalLength();
+  pathEl.style.setProperty('--len', len);
+  pathEl.style.strokeDasharray = String(len);
+}
+
+let gradientUid = 0;
+/** Returns {id, html} for a vertical fade-to-transparent gradient —
+ *  built as a string (not appendChild) because callers assemble their
+ *  whole chart as one HTML string before a single innerHTML write. */
+function fadeGradientDef(color) {
+  const id = `grad${++gradientUid}`;
+  const html = `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0%" stop-color="${color}" stop-opacity="0.32"/>` +
+    `<stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient>`;
+  return { id, html };
+}
+
+/** A subtle top-to-bottom two-stop gradient (same hue, slightly deeper
+ *  at the base) so bars read as premium rather than flat-filled. */
+function barGradientDef(color) {
+  const id = `grad${++gradientUid}`;
+  const html = `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0%" stop-color="${color}" stop-opacity="1"/>` +
+    `<stop offset="100%" stop-color="${color}" stop-opacity=".72"/></linearGradient>`;
+  return { id, html };
+}
+
 /* ── cash-flow columns ─────────────────────────────────── */
 function drawFlowChart() {
   const host = $('#flowHost');
@@ -307,7 +356,7 @@ function drawFlowChart() {
 
   if (!data.length || !data.some((d) => d.income || d.expense)) {
     host.onpointermove = host.onpointerleave = null;
-    host.innerHTML = emptyBlock('No entries in this period', 'Add an entry or widen the date range to see cash flow.');
+    host.innerHTML = emptyBlock('No entries in this period', 'Add an entry or widen the date range to see cash flow.', '', 'ledger');
     $('#flowTable').innerHTML = '';
     return;
   }
@@ -332,7 +381,9 @@ function drawFlowChart() {
   const barW = clamp((band - 16 - GAP) / 2, 3, 24); // bars capped at 24px, never fill the band
   const groupW = barW * 2 + GAP;
 
-  let g = '';
+  const inGrad = barGradientDef('var(--flow-in)');
+  const outGrad = barGradientDef('var(--flow-out)');
+  let g = `<defs>${inGrad.html}${outGrad.html}</defs>`;
   ticks.forEach((t) => {
     const y = yOf(t);
     g += `<line class="grid-line" x1="${pad.l}" y1="${y.toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
@@ -346,9 +397,10 @@ function drawFlowChart() {
     const x0 = cx - groupW / 2;
     const hIn  = (d.income / top) * ih;
     const hOut = (d.expense / top) * ih;
+    const delay = `style="animation-delay:${Math.min(i * 25, 400)}ms"`;
     g += `<rect class="hover-band" data-i="${i}" x="${(pad.l + band * i).toFixed(1)}" y="${pad.t}" width="${band.toFixed(1)}" height="${ih}" rx="6"/>`;
-    g += `<path class="bar" data-i="${i}" d="${columnPath(x0, yOf(d.income), barW, hIn)}" fill="var(--flow-in)"/>`;
-    g += `<path class="bar" data-i="${i}" d="${columnPath(x0 + barW + GAP, yOf(d.expense), barW, hOut)}" fill="var(--flow-out)"/>`;
+    g += `<path class="bar bar-v" data-i="${i}" ${delay} d="${columnPath(x0, yOf(d.income), barW, hIn)}" fill="url(#${inGrad.id})"/>`;
+    g += `<path class="bar bar-v" data-i="${i}" ${delay} d="${columnPath(x0 + barW + GAP, yOf(d.expense), barW, hOut)}" fill="url(#${outGrad.id})"/>`;
     if (i % showEvery === 0 || i === data.length - 1) {
       g += `<text class="axis-text" x="${cx.toFixed(1)}" y="${(pad.t + ih + 17).toFixed(1)}" text-anchor="middle">${monthLabel(d.key)}</text>`;
     }
@@ -460,15 +512,21 @@ function drawCategoryChart() {
   const ramp = ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6'];
   const total = sum(rows, (r) => r.value);
 
-  let g = '';
+  let g = '<defs>';
+  const fills = rows.map((r, i) => {
+    const base = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
+    const grad = barGradientDef(base);
+    g += grad.html;
+    return `url(#${grad.id})`;
+  });
+  g += '</defs>';
   rows.forEach((r, i) => {
     const y = pad.t + band * i + (band - barH) / 2;
     const w = (r.value / max) * iw;
-    const fill = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
     const name = r.name.length > 22 ? r.name.slice(0, 21) + '…' : r.name;
     g += `<text class="cat-name" x="${pad.l - 12}" y="${(y + barH / 2 + 4).toFixed(1)}" text-anchor="end">${esc(name)}</text>`;
     g += `<rect class="hover-band" data-i="${i}" x="0" y="${(pad.t + band * i).toFixed(1)}" width="${W}" height="${band.toFixed(1)}" rx="6"/>`;
-    g += `<path class="bar" data-i="${i}" d="${rowPath(pad.l, y, w, barH)}" fill="${fill}"/>`;
+    g += `<path class="bar bar-h" data-i="${i}" style="animation-delay:${i * 45}ms" d="${rowPath(pad.l, y, w, barH)}" fill="${fills[i]}"/>`;
     // direct label at the tip — the relief for light hues that sit under 3:1
     g += `<text class="bar-label" x="${(pad.l + w + 9).toFixed(1)}" y="${(y + barH / 2 + 4).toFixed(1)}">${fmtMoney(r.value, { compact: true })}</text>`;
   });
@@ -519,23 +577,36 @@ function drawSparkline() {
   const x = (i) => (i / (data.length - 1)) * (W - 6) + 3;
   const y = (v) => H - 6 - ((v - lo) / span) * (H - 12);
 
-  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  const line = `M${pts.join('L')}`;
+  const pts = vals.map((v, i) => [x(i), y(v)]);
+  const line = smoothPath(pts);
   const area = `${line}L${x(data.length - 1).toFixed(1)},${y(lo).toFixed(1)}L${x(0).toFixed(1)},${y(lo).toFixed(1)}Z`;
   const last = vals[vals.length - 1];
   const stroke = last < 0 ? 'var(--flow-out)' : 'var(--flow-in)';
   const zeroY = y(0);
+  const grad = fadeGradientDef(stroke);
 
   svg.innerHTML =
-    `<path d="${area}" fill="${stroke}" opacity="0.10"/>` +
+    `<defs>${grad.html}</defs>` +
+    `<path class="trend-area" d="${area}" fill="url(#${grad.id})"/>` +
     (lo < 0 ? `<line class="grid-line" x1="3" y1="${zeroY.toFixed(1)}" x2="${W - 3}" y2="${zeroY.toFixed(1)}"/>` : '') +
-    `<path d="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
-    `<circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;
+    `<path class="trend-line" id="sparkLine" d="${line}" fill="none" stroke="${stroke}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
+    `<circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4.5" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;
+  animateLineDraw($('#sparkLine', svg));
 }
 
-function emptyBlock(title, text, action = '') {
+const EMPTY_ICONS = {
+  generic: '<path d="M4 18l5-6 4 3.5L20 7"/><path d="M4 20h16"/>',
+  ledger:  '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  folder:  '<path d="M4 7a2 2 0 0 1 2-2h4l2 2.5h6a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z"/>',
+  people:  '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6"/><path d="M17.5 19a5.6 5.6 0 0 0-2-4"/>',
+  cards:   '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>',
+  tag:     '<path d="M20 12 12 20a1.5 1.5 0 0 1-2.1 0l-6-6a1.5 1.5 0 0 1 0-2.1L11.9 4H19a1 1 0 0 1 1 1v7z"/><circle cx="14.5" cy="8.5" r="1.5"/>',
+};
+
+function emptyBlock(title, text, action = '', icon = 'generic') {
+  const paths = EMPTY_ICONS[icon] || EMPTY_ICONS.generic;
   return `<div class="empty">
-    <span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l5-6 4 3.5L20 7"/><path d="M4 20h16"/></svg></span>
+    <span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>
     <b>${esc(title)}</b><p>${esc(text)}</p>${action}</div>`;
 }
 
@@ -644,7 +715,7 @@ function renderProjectSummary(list) {
 
   const table = $('#projSummaryTable');
   if (!rows.length) {
-    table.innerHTML = `<tbody><tr><td>${emptyBlock('No projects yet', 'Create a project to see profitability broken out per job.', '<button class="ghost-btn sm" data-goto="projects">Create a project</button>')}</td></tr></tbody>`;
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No projects yet', 'Create a project to see profitability broken out per job.', '<button class="ghost-btn sm" data-goto="projects">Create a project</button>', 'folder')}</td></tr></tbody>`;
     return;
   }
   const peak = Math.max(...rows.map((r) => Math.abs(r.net)), 1);
@@ -667,7 +738,7 @@ function renderRecent() {
   const feed = $('#recentFeed');
   const rows = [...state.transactions].sort((a, b) => (b.date.localeCompare(a.date)) || b.created - a.created).slice(0, 8);
   if (!rows.length) {
-    feed.innerHTML = `<li>${emptyBlock('Nothing recorded yet', 'Your most recent money movements will appear here.', '<button class="primary-btn sm" id="feedAdd">Add first entry</button>')}</li>`;
+    feed.innerHTML = `<li>${emptyBlock('Nothing recorded yet', 'Your most recent money movements will appear here.', '<button class="primary-btn sm" id="feedAdd">Add first entry</button>', 'ledger')}</li>`;
     $('#feedAdd')?.addEventListener('click', () => openTx());
     return;
   }
@@ -727,9 +798,10 @@ function renderTransactions() {
 
   if (!rows.length) {
     table.innerHTML = head + `<tbody><tr><td colspan="7">${emptyBlock(
-      state.transactions.length ? 'No matching entries' : 'No entries yet',
+      state.transactions.length ? 'No matching entries' : 'No transactions found',
       state.transactions.length ? 'Try clearing a filter or widening the date range.' : 'Record your first money movement to get started.',
-      state.transactions.length ? '' : '<button class="primary-btn sm" id="txEmptyAdd">Add an entry</button>'
+      state.transactions.length ? '' : '<button class="primary-btn sm" id="txEmptyAdd">Add an entry</button>',
+      'ledger'
     )}</td></tr></tbody>`;
     $('#txEmptyAdd')?.addEventListener('click', () => openTx());
     $('#txFoot').innerHTML = '';
@@ -788,9 +860,9 @@ function renderProjects() {
   const list = txInRange();
   if (!state.projects.length) {
     grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyBlock(
-      'No projects yet',
+      'Create your first project',
       'Group income and costs by job, client or campaign to see which ones actually make money.',
-      '<button class="primary-btn sm" id="projEmptyAdd">Create a project</button>')}</div>`;
+      '<button class="primary-btn sm" id="projEmptyAdd">Create a project</button>', 'folder')}</div>`;
     $('#projEmptyAdd')?.addEventListener('click', () => openProj());
     return;
   }
@@ -891,7 +963,7 @@ function renderProjectDetail() {
   const team = state.employees.filter((e) => e.project === p.id);
   const teamTable = $('#pdTeamTable');
   teamTable.innerHTML = !team.length
-    ? `<tbody><tr><td>${emptyBlock('No one assigned', 'Assign employees to this project from the employee form.')}</td></tr></tbody>`
+    ? `<tbody><tr><td>${emptyBlock('No one assigned', 'Assign employees to this project from the employee form.', '', 'people')}</td></tr></tbody>`
     : `<thead><tr><th>Name</th><th>Role</th><th>Status</th><th class="num">Monthly cost</th></tr></thead><tbody>` +
       team.map((e) => `<tr data-emp="${e.id}" style="cursor:pointer">
         <td><b>${esc(e.name)}</b></td>
@@ -908,7 +980,7 @@ function renderProjectDetail() {
   };
   const moneyIn = list.filter((x) => x.type === 'income').sort((a, b) => b.date.localeCompare(a.date));
   $('#pdInTable').innerHTML = !moneyIn.length
-    ? `<tbody><tr><td>${emptyBlock('No income yet', 'Money in for this project will show up here.')}</td></tr></tbody>`
+    ? `<tbody><tr><td>${emptyBlock('No income yet', 'Money in for this project will show up here.', '', 'ledger')}</td></tr></tbody>`
     : `<thead><tr><th>Date</th><th>Amount</th><th>Category</th><th>Method</th><th>Notes</th></tr></thead><tbody>` +
       moneyIn.map((tx) => `<tr>
         <td style="white-space:nowrap">${fmtDate(tx.date)}</td>
@@ -920,7 +992,7 @@ function renderProjectDetail() {
 
   const moneyOut = list.filter((x) => x.type === 'expense').sort((a, b) => b.date.localeCompare(a.date));
   $('#pdOutTable').innerHTML = !moneyOut.length
-    ? `<tbody><tr><td>${emptyBlock('No expenses yet', 'Money out for this project will show up here.')}</td></tr></tbody>`
+    ? `<tbody><tr><td>${emptyBlock('No expenses yet', 'Money out for this project will show up here.', '', 'ledger')}</td></tr></tbody>`
     : `<thead><tr><th>Date</th><th>Amount</th><th>Category</th><th>Method</th><th>Linked to</th><th>Notes</th></tr></thead><tbody>` +
       moneyOut.map((tx) => `<tr>
         <td style="white-space:nowrap">${fmtDate(tx.date)}</td>
@@ -950,18 +1022,21 @@ function drawProjProfitSpark() {
   const span = (hi - lo) || 1;
   const x = (i) => (i / (data.length - 1)) * (W - 6) + 3;
   const y = (v) => H - 6 - ((v - lo) / span) * (H - 12);
-  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  const line = `M${pts.join('L')}`;
+  const pts = vals.map((v, i) => [x(i), y(v)]);
+  const line = smoothPath(pts);
   const area = `${line}L${x(data.length - 1).toFixed(1)},${y(lo).toFixed(1)}L${x(0).toFixed(1)},${y(lo).toFixed(1)}Z`;
   const last = vals[vals.length - 1];
   const stroke = last < 0 ? 'var(--flow-out)' : 'var(--flow-in)';
   const zeroY = y(0);
+  const grad = fadeGradientDef(stroke);
 
   svg.innerHTML =
-    `<path d="${area}" fill="${stroke}" opacity="0.10"/>` +
+    `<defs>${grad.html}</defs>` +
+    `<path class="trend-area" d="${area}" fill="url(#${grad.id})"/>` +
     (lo < 0 ? `<line class="grid-line" x1="3" y1="${zeroY.toFixed(1)}" x2="${W - 3}" y2="${zeroY.toFixed(1)}"/>` : '') +
-    `<path d="${line}" fill="none" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
-    `<circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;
+    `<path class="trend-line" id="pdSparkLine" d="${line}" fill="none" stroke="${stroke}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
+    `<circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4.5" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;
+  animateLineDraw($('#pdSparkLine', svg));
 }
 
 /** Grouped-column monthly cash flow, all-time, scoped to one project. */
@@ -974,7 +1049,7 @@ function drawProjTrendChart() {
 
   if (!p || !data.length || !data.some((d) => d.income || d.expense)) {
     host.onpointermove = host.onpointerleave = null;
-    host.innerHTML = emptyBlock('No entries yet', 'Add income or expenses tagged to this project to see cash flow.');
+    host.innerHTML = emptyBlock('No entries yet', 'Add income or expenses tagged to this project to see cash flow.', '', 'ledger');
     return;
   }
 
@@ -996,7 +1071,9 @@ function drawProjTrendChart() {
   const barW = clamp((band - 16 - GAP) / 2, 3, 24);
   const groupW = barW * 2 + GAP;
 
-  let g = '';
+  const inGrad = barGradientDef('var(--flow-in)');
+  const outGrad = barGradientDef('var(--flow-out)');
+  let g = `<defs>${inGrad.html}${outGrad.html}</defs>`;
   ticks.forEach((t) => {
     const y = yOf(t);
     g += `<line class="grid-line" x1="${pad.l}" y1="${y.toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
@@ -1010,9 +1087,10 @@ function drawProjTrendChart() {
     const x0 = cx - groupW / 2;
     const hIn = (d.income / top) * ih;
     const hOut = (d.expense / top) * ih;
+    const delay = `style="animation-delay:${Math.min(i * 25, 400)}ms"`;
     g += `<rect class="hover-band" data-i="${i}" x="${(pad.l + band * i).toFixed(1)}" y="${pad.t}" width="${band.toFixed(1)}" height="${ih}" rx="6"/>`;
-    g += `<path class="bar" data-i="${i}" d="${columnPath(x0, yOf(d.income), barW, hIn)}" fill="var(--flow-in)"/>`;
-    g += `<path class="bar" data-i="${i}" d="${columnPath(x0 + barW + GAP, yOf(d.expense), barW, hOut)}" fill="var(--flow-out)"/>`;
+    g += `<path class="bar bar-v" data-i="${i}" ${delay} d="${columnPath(x0, yOf(d.income), barW, hIn)}" fill="url(#${inGrad.id})"/>`;
+    g += `<path class="bar bar-v" data-i="${i}" ${delay} d="${columnPath(x0 + barW + GAP, yOf(d.expense), barW, hOut)}" fill="url(#${outGrad.id})"/>`;
     if (i % showEvery === 0 || i === data.length - 1) {
       g += `<text class="axis-text" x="${cx.toFixed(1)}" y="${(pad.t + ih + 17).toFixed(1)}" text-anchor="middle">${monthLabel(d.key)}</text>`;
     }
@@ -1089,15 +1167,21 @@ function drawProjCategoryChart() {
   const ramp = ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6'];
   const total = sum(rows, (r) => r.value);
 
-  let g = '';
+  let g = '<defs>';
+  const fills = rows.map((r, i) => {
+    const base = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
+    const grad = barGradientDef(base);
+    g += grad.html;
+    return `url(#${grad.id})`;
+  });
+  g += '</defs>';
   rows.forEach((r, i) => {
     const y = pad.t + band * i + (band - barH) / 2;
     const w = (r.value / max) * iw;
-    const fill = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
     const name = r.name.length > 22 ? r.name.slice(0, 21) + '…' : r.name;
     g += `<text class="cat-name" x="${pad.l - 12}" y="${(y + barH / 2 + 4).toFixed(1)}" text-anchor="end">${esc(name)}</text>`;
     g += `<rect class="hover-band" data-i="${i}" x="0" y="${(pad.t + band * i).toFixed(1)}" width="${W}" height="${band.toFixed(1)}" rx="6"/>`;
-    g += `<path class="bar" data-i="${i}" d="${rowPath(pad.l, y, w, barH)}" fill="${fill}"/>`;
+    g += `<path class="bar bar-h" data-i="${i}" style="animation-delay:${i * 45}ms" d="${rowPath(pad.l, y, w, barH)}" fill="${fills[i]}"/>`;
     g += `<text class="bar-label" x="${(pad.l + w + 9).toFixed(1)}" y="${(y + barH / 2 + 4).toFixed(1)}">${fmtMoney(r.value, { compact: true })}</text>`;
   });
 
@@ -1146,7 +1230,7 @@ function renderEmployees() {
 
   const table = $('#empTable');
   if (!state.employees.length) {
-    table.innerHTML = `<tbody><tr><td>${emptyBlock('No employees yet', 'Add your team to track salary cost and post payroll straight to the ledger.', '<button class="primary-btn sm" id="empEmptyAdd">Add an employee</button>')}</td></tr></tbody>`;
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No employees yet', 'Add your team to track salary cost and post payroll straight to the ledger.', '<button class="primary-btn sm" id="empEmptyAdd">Add an employee</button>', 'people')}</td></tr></tbody>`;
     $('#empEmptyAdd')?.addEventListener('click', () => openEmp());
   } else {
     table.innerHTML =
@@ -1186,7 +1270,7 @@ function renderEmployees() {
   const pt = $('#payrollTable');
   const allRuns = [...state.payruns].sort((a, b) => b.date.localeCompare(a.date));
   if (!allRuns.length) {
-    pt.innerHTML = `<tbody><tr><td>${emptyBlock('No pay runs yet', 'Running payroll posts one salary expense per person, tagged to their project.')}</td></tr></tbody>`;
+    pt.innerHTML = `<tbody><tr><td>${emptyBlock('No pay runs yet', 'Running payroll posts one salary expense per person, tagged to their project.', '', 'ledger')}</td></tr></tbody>`;
   } else {
     pt.innerHTML =
       `<thead><tr><th>Pay date</th><th>Period</th><th class="num">People</th><th class="num">Total</th><th></th></tr></thead><tbody>` +
@@ -1256,7 +1340,7 @@ function renderEmployeeDetail() {
 
   const table = $('#empHistoryTable');
   if (!history.length) {
-    table.innerHTML = `<tbody><tr><td>${emptyBlock('No payments yet', 'Run payroll to post the first salary expense for this person.')}</td></tr></tbody>`;
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No payments yet', 'Run payroll to post the first salary expense for this person.', '', 'ledger')}</td></tr></tbody>`;
   } else {
     table.innerHTML = `<thead><tr><th>Date</th><th>Reference</th><th>Project</th><th class="num">Amount</th></tr></thead><tbody>` +
       history.map((t) => `<tr>
@@ -1279,7 +1363,7 @@ function drawEmpTrendChart() {
 
   if (!emp || !data.length || !data.some((d) => d.expense)) {
     host.onpointermove = host.onpointerleave = null;
-    host.innerHTML = emptyBlock('No payments yet', 'Salary paid to this person will show up here.');
+    host.innerHTML = emptyBlock('No payments yet', 'Salary paid to this person will show up here.', '', 'ledger');
     return;
   }
 
@@ -1299,7 +1383,8 @@ function drawEmpTrendChart() {
   const band = iw / data.length;
   const barW = clamp(band - 16, 3, 40);
 
-  let g = '';
+  const barGrad = barGradientDef('var(--flow-out)');
+  let g = `<defs>${barGrad.html}</defs>`;
   ticks.forEach((t) => {
     const y = yOf(t);
     g += `<line class="grid-line" x1="${pad.l}" y1="${y.toFixed(1)}" x2="${(pad.l + iw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
@@ -1312,7 +1397,7 @@ function drawEmpTrendChart() {
     const cx = pad.l + band * i + band / 2;
     const h = (d.expense / top) * ih;
     g += `<rect class="hover-band" data-i="${i}" x="${(pad.l + band * i).toFixed(1)}" y="${pad.t}" width="${band.toFixed(1)}" height="${ih}" rx="6"/>`;
-    g += `<path class="bar" data-i="${i}" d="${columnPath(cx - barW / 2, yOf(d.expense), barW, h)}" fill="var(--flow-out)"/>`;
+    g += `<path class="bar bar-v" data-i="${i}" style="animation-delay:${Math.min(i * 25, 400)}ms" d="${columnPath(cx - barW / 2, yOf(d.expense), barW, h)}" fill="url(#${barGrad.id})"/>`;
     if (i % showEvery === 0 || i === data.length - 1) {
       g += `<text class="axis-text" x="${cx.toFixed(1)}" y="${(pad.t + ih + 17).toFixed(1)}" text-anchor="middle">${monthLabel(d.key)}</text>`;
     }
@@ -1356,7 +1441,7 @@ function renderCategories() {
     const host = $(type === 'income' ? '#catListIncome' : '#catListExpense');
     const cats = state.categories.filter((c) => c.type === type);
     if (!cats.length) {
-      host.innerHTML = `<li>${emptyBlock('No categories', `Add a ${type === 'income' ? 'revenue' : 'cost'} category to start tagging entries.`)}</li>`;
+      host.innerHTML = `<li>${emptyBlock('No categories', `Add a ${type === 'income' ? 'revenue' : 'cost'} category to start tagging entries.`, '', 'tag')}</li>`;
       return;
     }
     const withTotals = cats.map((c) => ({
@@ -1400,7 +1485,7 @@ function renderSubscriptions() {
 
   const table = $('#subTable');
   if (!subs.length) {
-    table.innerHTML = `<tbody><tr><td>${emptyBlock('No subscriptions yet', 'Track recurring software and platform costs here — charges post to the ledger automatically on each renewal.', '<button class="primary-btn sm" id="subEmptyAdd">Add a subscription</button>')}</td></tr></tbody>`;
+    table.innerHTML = `<tbody><tr><td>${emptyBlock('No subscriptions yet', 'Track recurring software and platform costs here — charges post to the ledger automatically on each renewal.', '<button class="primary-btn sm" id="subEmptyAdd">Add a subscription</button>', 'cards')}</td></tr></tbody>`;
     $('#subEmptyAdd')?.addEventListener('click', () => openSub());
     return;
   }
@@ -1491,7 +1576,7 @@ $('#addSubBtn').addEventListener('click', () => openSub());
 function renderPaymentMethods() {
   const host = $('#methodList');
   if (!state.paymentMethods.length) {
-    host.innerHTML = `<li>${emptyBlock('No payment methods', 'Add one to start tagging how money moved.')}</li>`;
+    host.innerHTML = `<li>${emptyBlock('No payment methods', 'Add one to start tagging how money moved.', '', 'tag')}</li>`;
     return;
   }
   host.innerHTML = state.paymentMethods.map((m) => `<li>
@@ -1561,8 +1646,9 @@ function refreshSelects() {
   keepValue($('#subProject'), `<option value="">— No project —</option>${projOpts}`);
   keepValue($('#subMethod'), `<option value="">— Not set —</option>${methodOpts}`);
   keepValue($('#breakdownProject'), `<option value="">All projects</option>${projOpts}`);
-  keepValue($('#txEmployee'), `<option value="">— Select employee —</option>${empOpts}`);
-  keepValue($('#txSub'), `<option value="">— Select subscription —</option>${subOpts}`);
+  const txFields = ensureTxFieldNodes();
+  keepValue(txFields.employee.querySelector('#txEmployee'), `<option value="">— Select employee —</option>${empOpts}`);
+  keepValue(txFields.sub.querySelector('#txSub'), `<option value="">— Select subscription —</option>${subOpts}`);
 }
 
 function fillTxCategories(type, selected) {
@@ -1573,15 +1659,42 @@ function fillTxCategories(type, selected) {
   updateTxContextFields();
 }
 
-/** Shows/hides the Employee, Subscription and Vendor fields on the New
- *  Entry form based on the selected category's name — same name-matching
- *  approach payroll already uses to find/create "Salaries & wages". */
+/** Cached references to the Employee/Subscription/Vendor field <label>s,
+ *  captured once from their original DOM position before we ever start
+ *  detaching them (ensures refreshSelects() can still reach the <select>s
+ *  inside even while they're removed from the document). */
+let txFieldNodes = null;
+function ensureTxFieldNodes() {
+  if (!txFieldNodes) {
+    txFieldNodes = {
+      employee: document.getElementById('txEmployeeField'),
+      sub: document.getElementById('txSubField'),
+      vendor: document.getElementById('txVendorField'),
+    };
+  }
+  return txFieldNodes;
+}
+
+/** Inserts/removes the Employee, Subscription and Vendor fields from the
+ *  New Entry form's DOM entirely — not just hidden — based on the
+ *  selected category's name. Same name-matching approach payroll already
+ *  uses to find/create "Salaries & wages". */
 function updateTxContextFields() {
+  const nodes = ensureTxFieldNodes();
+  const form = $('#txForm');
+  const anchor = form.querySelector('.field--full'); // Description — always present
   const opt = $('#txCategory').selectedOptions[0];
   const name = opt ? opt.textContent : '';
-  $('#txEmployeeField').hidden = !/salar/i.test(name);
-  $('#txSubField').hidden = !/subscri/i.test(name);
-  $('#txVendorField').hidden = !/vendor/i.test(name);
+  const show = {
+    employee: /salar/i.test(name),
+    sub: /subscri/i.test(name),
+    vendor: /vendor/i.test(name),
+  };
+  for (const key of Object.keys(show)) {
+    const node = nodes[key];
+    if (show[key] && !node.isConnected) anchor.parentNode.insertBefore(node, anchor);
+    else if (!show[key] && node.isConnected) node.remove();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1610,9 +1723,12 @@ function openTx(id) {
     el.method.value = editingTx.method || 'Bank transfer';
     el.reference.value = editingTx.reference || '';
     $('#txProject').value = editingTx.project || '';
-    $('#txEmployee').value = editingTx.employee || '';
-    $('#txSub').value = editingTx.subscriptionId || '';
-    el.vendor.value = editingTx.vendor || '';
+    // these three only exist in the form when their category matches —
+    // updateTxContextFields() (run inside fillTxCategories above) has
+    // already inserted whichever one applies to editingTx.category
+    if (el.employee) el.employee.value = editingTx.employee || '';
+    if (el.subscriptionId) el.subscriptionId.value = editingTx.subscriptionId || '';
+    if (el.vendor) el.vendor.value = editingTx.vendor || '';
   }
   $('#txModal').showModal();
   setTimeout(() => el.amount.focus(), 50);
@@ -1633,9 +1749,12 @@ $('#txForm').addEventListener('submit', (e) => {
     description: f.description.value.trim(),
     method: f.method.value,
     reference: f.reference.value.trim(),
-    employee: $('#txEmployee').value || '',
-    subscriptionId: $('#txSub').value || '',
-    vendor: f.vendor.value.trim(),
+    // these three only exist in the DOM (and thus in f) when their
+    // category is selected; if the category was changed away from one
+    // that needs them, they're rightly cleared rather than left stale
+    employee: f.employee ? f.employee.value : '',
+    subscriptionId: f.subscriptionId ? f.subscriptionId.value : '',
+    vendor: f.vendor ? f.vendor.value.trim() : '',
   };
   if (editingTx) state.transactions = state.transactions.map((t) => (t.id === rec.id ? { ...t, ...rec } : t));
   else state.transactions.push(rec);
@@ -2030,7 +2149,7 @@ $('#themeToggle').addEventListener('click', () => {
   const isDark = current === 'dark' || (current === 'system' && prefersDark);
   applyTheme(isDark ? 'light' : 'dark');
 });
-applyTheme(localStorage.getItem(THEME_KEY) || 'system');
+applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
 /* sidebar (mobile) */
 const openSidebar = () => { $('#sidebar').classList.add('is-open'); $('#scrim').classList.add('is-on'); };
