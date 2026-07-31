@@ -741,7 +741,11 @@ td .empty { padding: 40px 20px; }
   transition: opacity .28s var(--ease-spring), transform .28s var(--ease-spring),
               overlay .28s allow-discrete, display .28s allow-discrete;
 }
-.modal[open] { opacity: 1; transform: scale(1) translateY(0); }
+/* transform: none (not scale(1)) once settled — any non-"none" transform,
+   even a no-op one, would make this dialog the containing block for our
+   position:fixed dropdown panels instead of the viewport, mispositioning
+   every dropdown opened while a modal is open */
+.modal[open] { opacity: 1; transform: none; }
 @starting-style { .modal[open] { opacity: 0; transform: scale(.96) translateY(10px); } }
 .modal--sm { width: min(500px, calc(100vw - 32px)); }
 .modal--xs { width: min(400px, calc(100vw - 32px)); }
