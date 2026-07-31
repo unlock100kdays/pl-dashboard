@@ -12,6 +12,36 @@
 </head>
 <body>
 
+<!-- Entry gate. `hidden` by default so a failure to run JS leaves the
+     dashboard reachable rather than locking it behind a dead screen. -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-bg" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="gate-grid" aria-hidden="true"></div>
+  <div class="gate-card" role="dialog" aria-modal="true" aria-labelledby="gateHeading">
+    <span class="gate-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-6 4 3.5L20 6"/></svg>
+    </span>
+    <p class="gate-kicker">Welcome to the Finance Section of</p>
+    <h1 class="gate-title" id="gateHeading">PEN<span class="gate-n">N</span>PIXEL</h1>
+    <p class="gate-sub">Enter your access PIN to open the dashboard</p>
+
+    <form class="gate-form" id="gateForm" autocomplete="off">
+      <div class="pin-row" id="pinRow">
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 1" autocomplete="off">
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 2" autocomplete="off">
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 3" autocomplete="off">
+        <input class="pin-box" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="PIN digit 4" autocomplete="off">
+      </div>
+      <p class="gate-error" id="gateError" role="alert" aria-live="polite"></p>
+      <button type="submit" class="gate-btn" id="gateBtn">
+        Unlock Dashboard
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+    <p class="gate-foot">Pen N Pixel LLC · Financial Operations</p>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- ───────────────────────── Sidebar ───────────────────────── -->

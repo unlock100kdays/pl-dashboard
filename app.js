@@ -102,6 +102,7 @@ function save() {
    were based on, so a second device can never silently clobber a first.
    ═══════════════════════════════════════════════════════ */
 const STATE_ENDPOINT = '/api/state';
+const pinHeaders = () => (apiPin ? { 'X-Dashboard-Pin': apiPin } : {});
 let stateVersion = 0;         // version this client last saw from the server
 let serverAvailable = false;  // false ⇒ running local-only (offline / no backend)
 let pushTimer = null, pushing = false, pushQueued = false;
@@ -118,7 +119,7 @@ function setCloudStatus(mode, detail) {
 /** Pulls the shared record. Returns true when server state was applied. */
 async function loadStateFromServer() {
   try {
-    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store' });
+    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store', headers: pinHeaders() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'unavailable');
@@ -154,7 +155,7 @@ async function doPush() {
   try {
     const r = await fetch(STATE_ENDPOINT, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...pinHeaders() },
       body: JSON.stringify({ state, baseVersion: stateVersion }),
     });
     const d = await r.json().catch(() => ({}));
@@ -3101,13 +3102,97 @@ async function boot() {
   if (serverAvailable && !gotServer) doPush();
 }
 
-boot();
+/* ═══════════════════════════════════════════════════════
+   Entry gate
+
+   IMPORTANT, and stated plainly: this PIN is checked in the browser,
+   so it keeps casual visitors out — it is not real protection. Anyone
+   who opens devtools can read it, and /api/state answers without it.
+   It becomes genuine protection the moment a DASHBOARD_PIN environment
+   variable is set on the Pages project: the API then rejects requests
+   whose X-Dashboard-Pin header does not match, and the PIN stops being
+   discoverable from the client. Cloudflare Access remains the stronger
+   option because it also covers the endpoints and is per-person.
+   ═══════════════════════════════════════════════════════ */
+const GATE_PIN = '8127';
+const GATE_KEY = 'pl-dashboard:unlocked';
+
+function initGate(onUnlock) {
+  const gate = $('#gate');
+  if (!gate) { onUnlock(); return; }
+
+  // stay unlocked for the tab session, so a refresh isn't a re-login
+  if (sessionStorage.getItem(GATE_KEY) === '1') { onUnlock(); return; }
+
+  gate.hidden = false;
+  document.body.classList.add('is-locked');
+  const boxes = $$('.pin-box', gate);
+  const err = $('#gateError');
+  const entered = () => boxes.map((b) => b.value).join('');
+
+  const clearWrong = () => { gate.classList.remove('is-wrong'); err.textContent = ''; };
+
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      box.value = box.value.replace(/\D/g, '').slice(0, 1);
+      box.classList.toggle('is-filled', !!box.value);
+      clearWrong();
+      if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+      if (entered().length === boxes.length) $('#gateForm').requestSubmit();
+    });
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ''; boxes[i - 1].classList.remove('is-filled'); }
+      if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
+      if (e.key === 'ArrowRight' && i < boxes.length - 1) boxes[i + 1].focus();
+    });
+    // let a pasted code fill the whole row
+    box.addEventListener('paste', (e) => {
+      const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, boxes.length);
+      if (!digits) return;
+      e.preventDefault();
+      boxes.forEach((b, k) => { b.value = digits[k] || ''; b.classList.toggle('is-filled', !!b.value); });
+      clearWrong();
+      if (digits.length === boxes.length) $('#gateForm').requestSubmit();
+      else boxes[digits.length]?.focus();
+    });
+  });
+
+  $('#gateForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const pin = entered();
+    if (pin.length < boxes.length) { err.textContent = 'Enter all four digits.'; return; }
+    if (pin !== GATE_PIN) {
+      gate.classList.add('is-wrong');
+      err.textContent = 'Incorrect PIN. Try again.';
+      setTimeout(() => {
+        boxes.forEach((b) => { b.value = ''; b.classList.remove('is-filled'); });
+        boxes[0].focus();
+      }, 420);
+      return;
+    }
+    sessionStorage.setItem(GATE_KEY, '1');
+    apiPin = pin;                       // sent on API calls so server-side checking can be switched on
+    gate.classList.add('is-open');
+    document.body.classList.remove('is-locked');
+    $('.app')?.classList.add('is-revealing');
+    setTimeout(() => { gate.hidden = true; gate.classList.remove('is-open'); }, 560);
+    onUnlock();
+  });
+
+  setTimeout(() => boxes[0].focus(), 380);
+}
+
+/** Sent as X-Dashboard-Pin. Ignored by the API until DASHBOARD_PIN is
+ *  configured on the Pages project, at which point it becomes required. */
+let apiPin = sessionStorage.getItem(GATE_KEY) === '1' ? GATE_PIN : '';
+
+initGate(boot);
 
 // pick up edits made on another device when you come back to this tab
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden || !serverAvailable || pushing) return;
   try {
-    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store' });
+    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store', headers: pinHeaders() });
     const d = await r.json();
     if (d.ok && (d.version || 0) > stateVersion && d.state) {
       handleConflict({ ...d, conflict: true });

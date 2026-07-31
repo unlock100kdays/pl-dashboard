@@ -164,6 +164,122 @@
   --shadow-lg: 0 36px 90px rgba(0,0,0,.7), 0 8px 24px rgba(0,0,0,.5);
 }
 
+/* ═══════════════════════════════════════════════════════
+   Entry gate
+   ═══════════════════════════════════════════════════════ */
+.gate {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center;
+  background: #06060a; overflow: hidden;
+  animation: gateIn .5s var(--ease);
+}
+.gate[hidden] { display: none; }
+body.is-locked { overflow: hidden; }
+@keyframes gateIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* drifting colour field behind the card */
+.gate-bg { position: absolute; inset: -25%; pointer-events: none; filter: blur(90px); opacity: .55; }
+.gate-bg span { position: absolute; display: block; border-radius: 50%; }
+.gate-bg span:nth-child(1) { width: 46vw; height: 46vw; left: 6%;  top: 4%;   background: #2563eb; animation: drift1 19s ease-in-out infinite alternate; }
+.gate-bg span:nth-child(2) { width: 40vw; height: 40vw; right: 4%; top: 18%;  background: #0d9488; animation: drift2 23s ease-in-out infinite alternate; }
+.gate-bg span:nth-child(3) { width: 34vw; height: 34vw; left: 32%; bottom: 2%; background: #7c3aed; animation: drift3 27s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate3d(9%, 12%, 0) scale(1.16); } }
+@keyframes drift2 { to { transform: translate3d(-11%, 9%, 0) scale(1.1); } }
+@keyframes drift3 { to { transform: translate3d(7%, -13%, 0) scale(1.2); } }
+
+/* faint engineering grid over the colour */
+.gate-grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(70% 55% at 50% 45%, #000 0%, transparent 78%);
+  -webkit-mask-image: radial-gradient(70% 55% at 50% 45%, #000 0%, transparent 78%);
+}
+@media (prefers-reduced-motion: reduce) { .gate-bg span { animation: none; } }
+
+.gate-card {
+  position: relative; z-index: 1;
+  width: min(432px, calc(100vw - 32px));
+  padding: 40px 38px 30px; text-align: center;
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,.11);
+  background: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.022) 46%, rgba(255,255,255,.012) 100%), rgba(10,10,14,.72);
+  backdrop-filter: blur(26px) saturate(1.3); -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  box-shadow: 0 40px 110px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,255,255,.09);
+  animation: gateCardIn .6s var(--ease-spring) backwards .1s;
+}
+@keyframes gateCardIn { from { opacity: 0; transform: translateY(20px) scale(.97); } to { opacity: 1; transform: none; } }
+
+.gate-mark {
+  width: 52px; height: 52px; margin: 0 auto 22px;
+  display: grid; place-items: center; border-radius: 15px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%); color: #fff;
+  box-shadow: 0 12px 34px -12px rgba(59,130,246,.85);
+}
+.gate-mark svg { width: 26px; height: 26px; }
+
+.gate-kicker {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+  color: rgba(255,255,255,.5); margin-bottom: 10px;
+}
+.gate-title {
+  font-size: clamp(31px, 6.4vw, 43px); font-weight: 800; letter-spacing: -.035em; line-height: 1.04;
+  color: #fff; margin-bottom: 12px;
+}
+.gate-title .gate-n {
+  margin: 0 .18em;
+  background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.gate-sub { font-size: 13px; color: rgba(255,255,255,.5); margin-bottom: 26px; }
+
+.pin-row { display: flex; gap: 12px; justify-content: center; }
+.pin-box {
+  width: 58px; height: 66px; text-align: center;
+  font-size: 26px; font-weight: 700; color: #fff;
+  border-radius: 15px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.045);
+  outline: none; caret-color: #3b82f6;
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease), background .18s var(--ease), transform .18s var(--ease);
+}
+.pin-box::-ms-reveal { display: none; }
+.pin-box:focus { border-color: #3b82f6; background: rgba(59,130,246,.1); box-shadow: 0 0 0 4px rgba(59,130,246,.18); transform: translateY(-2px); }
+.pin-box.is-filled { border-color: rgba(45,212,191,.5); background: rgba(45,212,191,.09); }
+.gate.is-wrong .pin-box { border-color: #f2617a; background: rgba(242,97,122,.1); }
+.gate.is-wrong .gate-card { animation: gateShake .42s var(--ease); }
+@keyframes gateShake { 10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)} 30%,50%,70%{transform:translateX(-8px)} 40%,60%{transform:translateX(8px)} }
+@media (prefers-reduced-motion: reduce) { .gate.is-wrong .gate-card { animation: none; } }
+
+.gate-error { min-height: 18px; margin: 14px 0 0; font-size: 12.5px; color: #f2617a; }
+.gate-btn {
+  width: 100%; margin-top: 14px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 50px; border-radius: 15px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%); color: #fff;
+  font-size: 14.5px; font-weight: 650; letter-spacing: -.005em;
+  box-shadow: 0 14px 34px -14px rgba(59,130,246,.9);
+  transition: transform .18s var(--ease), box-shadow .22s var(--ease), filter .18s var(--ease);
+}
+.gate-btn svg { width: 17px; height: 17px; }
+.gate-btn:hover { transform: translateY(-2px); filter: brightness(1.07); box-shadow: 0 18px 44px -14px rgba(59,130,246,1); }
+.gate-btn:active { transform: translateY(0); }
+.gate-btn[disabled] { opacity: .55; pointer-events: none; }
+.gate-foot { margin-top: 22px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: rgba(255,255,255,.3); }
+
+/* unlock: gate lifts away, dashboard settles in behind it */
+.gate.is-open { animation: gateOut .55s var(--ease) forwards; pointer-events: none; }
+@keyframes gateOut { to { opacity: 0; transform: scale(1.05); filter: blur(14px); } }
+.app.is-revealing { animation: appReveal .7s var(--ease); }
+@keyframes appReveal { from { opacity: 0; transform: scale(.988); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 420px) {
+  .gate-card { padding: 32px 22px 24px; }
+  .pin-box { width: 50px; height: 58px; font-size: 22px; }
+  .pin-row { gap: 9px; }
+}
+
 /* ── reset ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }

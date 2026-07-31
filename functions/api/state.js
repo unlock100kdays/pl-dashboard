@@ -22,7 +22,21 @@ const json = (body, status = 200) =>
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 
-export async function onRequestGet({ env }) {
+/** Opt-in gate. Dormant until a DASHBOARD_PIN environment variable is
+ *  set on the Pages project; once it is, every request must carry a
+ *  matching X-Dashboard-Pin header and the PIN stops being something a
+ *  visitor can read out of the client bundle. Returns null when the
+ *  request is allowed through. */
+function denied(request, env) {
+  const expected = env.DASHBOARD_PIN;
+  if (!expected) return null;                       // not configured — open, as before
+  const given = request.headers.get('X-Dashboard-Pin') || '';
+  if (given === expected) return null;
+  return json({ ok: false, error: 'Unauthorised' }, 401);
+}
+
+export async function onRequestGet({ request, env }) {
+  const block = denied(request, env); if (block) return block;
   if (!env.DASHBOARD_KV) return json({ ok: false, error: 'DASHBOARD_KV binding missing' }, 500);
   const raw = await env.DASHBOARD_KV.get(KEY);
   if (!raw) return json({ ok: true, version: 0, state: null });
@@ -35,6 +49,7 @@ export async function onRequestGet({ env }) {
 }
 
 export async function onRequestPut({ request, env }) {
+  const block = denied(request, env); if (block) return block;
   if (!env.DASHBOARD_KV) return json({ ok: false, error: 'DASHBOARD_KV binding missing' }, 500);
 
   let body;
