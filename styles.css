@@ -537,6 +537,22 @@ html.no-motion .tile::after, html.no-motion .proj-card::after { display: none; }
   border: 1px solid var(--line-strong); background: var(--surface);
   color: var(--ink-muted);
 }
+/* shared-copy status — tells you at a glance whether what you are
+   looking at is the synced record or just this browser */
+.cloud-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 12px; border-radius: 12px;
+  border: 1px solid var(--line-strong); background: var(--surface-sunk);
+  font-size: 12px; font-weight: 560; white-space: nowrap;
+  transition: color .2s var(--ease), border-color .2s var(--ease);
+}
+.cloud-status svg { width: 15px; height: 15px; flex: none; }
+.cloud-status--synced   { color: var(--good-text); border-color: color-mix(in srgb, var(--good-text) 30%, transparent); }
+.cloud-status--saving   { color: var(--warning);   border-color: color-mix(in srgb, var(--warning) 34%, transparent); }
+.cloud-status--conflict { color: var(--warning);   border-color: color-mix(in srgb, var(--warning) 34%, transparent); }
+.cloud-status--offline  { color: var(--ink-muted); }
+@media (max-width: 1180px) { .cloud-status .cloud-label { display: none; } .cloud-status { padding: 0 10px; } }
+
 .notif-btn { position: relative; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface-sunk); }
 .notif-badge {
   position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px;

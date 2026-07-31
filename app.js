@@ -88,10 +88,102 @@ function load() {
 
 function save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));   // offline cache only
   } catch (err) {
     toast('Could not save — browser storage is full', 'bad');
   }
+  pushStateToServer();   // the server copy is the shared source of truth
+}
+
+/* ═══════════════════════════════════════════════════════
+   Shared state sync
+   localStorage is now only an offline cache; the KV record behind
+   /api/state is what every device reads. Saves carry the version they
+   were based on, so a second device can never silently clobber a first.
+   ═══════════════════════════════════════════════════════ */
+const STATE_ENDPOINT = '/api/state';
+let stateVersion = 0;         // version this client last saw from the server
+let serverAvailable = false;  // false ⇒ running local-only (offline / no backend)
+let pushTimer = null, pushing = false, pushQueued = false;
+
+function setCloudStatus(mode, detail) {
+  const el = $('#cloudStatus');
+  if (!el) return;
+  el.className = `cloud-status cloud-status--${mode}`;
+  el.title = detail;
+  const label = $('.cloud-label', el);
+  if (label) label.textContent = { synced: 'Synced', saving: 'Saving…', offline: 'Local only', conflict: 'Out of date' }[mode] || '';
+}
+
+/** Pulls the shared record. Returns true when server state was applied. */
+async function loadStateFromServer() {
+  try {
+    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'unavailable');
+    serverAvailable = true;
+    stateVersion = d.version || 0;
+    if (d.state && Array.isArray(d.state.transactions)) {
+      state = { ...blankState(), ...d.state, settings: { ...blankState().settings, ...(d.state.settings || {}) } };
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* cache only */ }
+      setCloudStatus('synced', `In sync with the shared copy (v${stateVersion})`);
+      return true;
+    }
+    // server reachable but empty — this browser's local data seeds it
+    setCloudStatus('synced', 'Shared copy is empty; this device will seed it');
+    return false;
+  } catch (err) {
+    serverAvailable = false;
+    setCloudStatus('offline', `Working from this browser only — ${String(err.message || err)}`);
+    return false;
+  }
+}
+
+function pushStateToServer() {
+  if (!serverAvailable) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(doPush, 600);   // debounce bursts of edits into one write
+}
+
+async function doPush() {
+  if (!serverAvailable) return;
+  if (pushing) { pushQueued = true; return; }   // never overlap writes
+  pushing = true;
+  setCloudStatus('saving', 'Saving to the shared copy…');
+  try {
+    const r = await fetch(STATE_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, baseVersion: stateVersion }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 409 && d.conflict) { handleConflict(d); return; }
+    if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    stateVersion = d.version;
+    setCloudStatus('synced', `Saved to the shared copy (v${stateVersion})`);
+  } catch (err) {
+    setCloudStatus('offline', `Could not reach the shared copy — ${String(err.message || err)}`);
+  } finally {
+    pushing = false;
+    if (pushQueued) { pushQueued = false; doPush(); }
+  }
+}
+
+/** Another device saved first. Take their copy rather than overwrite it —
+ *  losing one unsaved edit is recoverable, silently destroying someone
+ *  else's whole session is not. */
+function handleConflict(d) {
+  setCloudStatus('conflict', 'Another device saved first — reloading the newer copy');
+  if (d.state && Array.isArray(d.state.transactions)) {
+    state = { ...blankState(), ...d.state, settings: { ...blankState().settings, ...(d.state.settings || {}) } };
+    stateVersion = d.version || 0;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* cache only */ }
+    hydrateSettings();
+    renderAll();
+    setCloudStatus('synced', `Reloaded the newer shared copy (v${stateVersion})`);
+  }
+  toast('This dashboard changed on another device — reloaded the latest version', 'warn');
   // single call site — every CRUD path in the app already funnels through
   // save(), so this is the one place Sheets sync can't be missed
   scheduleSheetsSync();
@@ -2979,15 +3071,46 @@ function refreshReorderables() {
 }
 
 /* ── boot ──────────────────────────────────────────────── */
-if (!state.transactions.length && !state.employees.length && !state.projects.length
-    && !localStorage.getItem(STORE_KEY)) {
-  seedDemo();           // first visit: show the dashboard with a worked example
+/** Paints from the local cache first so the UI is never blank, then
+ *  reconciles against the shared copy. Demo data is only ever seeded
+ *  when the *server* is confirmed empty — otherwise a fresh browser
+ *  would seed demo rows over everyone else's real data. */
+async function boot() {
+  enhanceAllSelects();
+  applyMotionPref();
+
+  const hadLocal = !!localStorage.getItem(STORE_KEY);
+  const gotServer = await loadStateFromServer();
+
+  if (!gotServer && serverAvailable && !hadLocal
+      && !state.transactions.length && !state.employees.length && !state.projects.length) {
+    seedDemo();                       // genuinely first run: server and browser both empty
+  } else if (!gotServer && !serverAvailable && !hadLocal
+      && !state.transactions.length && !state.employees.length && !state.projects.length) {
+    seedDemo();                       // offline first run: local demo so the app isn't empty
+  }
+
+  advanceSubscriptions();
+  hydrateSettings();
+  renderAll();
+  setView('overview');
+  renderPeriodBar();
+  refreshReorderables();
+
+  // if the server was reachable but empty, publish what this device has
+  if (serverAvailable && !gotServer) doPush();
 }
-advanceSubscriptions();
-enhanceAllSelects();
-hydrateSettings();
-renderAll();
-setView('overview');
-applyMotionPref();
-renderPeriodBar();
-refreshReorderables();
+
+boot();
+
+// pick up edits made on another device when you come back to this tab
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !serverAvailable || pushing) return;
+  try {
+    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok && (d.version || 0) > stateVersion && d.state) {
+      handleConflict({ ...d, conflict: true });
+    }
+  } catch { /* stay on the local copy */ }
+});
