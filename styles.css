@@ -247,15 +247,23 @@ svg { display: block; }
 .main { flex: 1; min-width: 0; margin-left: var(--sidebar-w); display: flex; flex-direction: column; }
 
 /* ── topbar ────────────────────────────────────────────── */
+/* backdrop-filter lives on ::before, not .topbar itself — like transform,
+   filter and backdrop-filter make an element the containing block for any
+   position:fixed descendant, which would mispositon our dropdown panels
+   relative to the topbar's box instead of the viewport (see the modal fix
+   above for the same class of bug) */
 .topbar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 16px;
   padding: 20px 32px;
+  border-bottom: 1px solid var(--line);
+  transition: border-color .25s var(--ease);
+}
+.topbar::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
   background: color-mix(in srgb, var(--page) 78%, transparent);
   backdrop-filter: saturate(1.7) blur(16px);
   -webkit-backdrop-filter: saturate(1.7) blur(16px);
-  border-bottom: 1px solid var(--line);
-  transition: border-color .25s var(--ease);
 }
 .topbar-title h1 {
   font-size: 21px; font-weight: 650; letter-spacing: -.024em;
