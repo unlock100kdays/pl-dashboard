@@ -18,9 +18,8 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-// Column layout per sheet. `paymentMethods` intentionally has a single
-// column. Vendors is omitted — there's no Vendors module in the
-// dashboard yet, so there's nothing to populate it with.
+// Column layout per sheet that actually has a data source in the
+// dashboard today — these get created AND kept in sync on every POST.
 const SHEET_DEFS = {
   transactions: { title: 'Transactions', headers: ['Date', 'Type', 'Category', 'Project', 'Employee', 'Subscription', 'Vendor', 'Method', 'Amount', 'Currency', 'Notes'] },
   projects: { title: 'Projects', headers: ['Project Name', 'Revenue', 'Expenses', 'Profit', 'Status', 'Client'] },
@@ -28,6 +27,17 @@ const SHEET_DEFS = {
   subscriptions: { title: 'Subscriptions', headers: ['Platform', 'Monthly Cost', 'Renewal Date', 'Payment Method', 'Status'] },
   paymentMethods: { title: 'Methods', headers: ['Payment Methods'] },
 };
+
+// Placeholder tabs for modules that don't exist in the dashboard yet —
+// created with a sensible header row so the spreadsheet's shape is ready
+// ahead of time, but never written to by onRequestPost since there's no
+// data source for them. Will move into SHEET_DEFS once those modules
+// (Vendors, Clients) or the corresponding concept (Settings) exist.
+const PLACEHOLDER_SHEETS = [
+  { title: 'Vendors', headers: ['Vendor', 'Category', 'Contact', 'GST/VAT', 'Total Paid'] },
+  { title: 'Clients', headers: ['Client Name', 'Contact', 'Related Projects', 'Total Revenue'] },
+  { title: 'Settings', headers: ['Setting', 'Value'] },
+];
 
 function base64url(input) {
   const str = typeof input === 'string' ? btoa(input) : btoa(String.fromCharCode(...new Uint8Array(input)));
@@ -85,7 +95,8 @@ async function sheetsFetch(path, token, opts = {}) {
 }
 
 async function ensureSheetsExist(sheetId, token, existingTitles) {
-  const missing = Object.values(SHEET_DEFS).filter((d) => !existingTitles.includes(d.title));
+  const allDefs = [...Object.values(SHEET_DEFS), ...PLACEHOLDER_SHEETS];
+  const missing = allDefs.filter((d) => !existingTitles.includes(d.title));
   if (!missing.length) return;
   await sheetsFetch(`/${sheetId}:batchUpdate`, token, {
     method: 'POST',
