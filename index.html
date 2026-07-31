@@ -12,6 +12,10 @@
 </head>
 <body>
 
+<!-- fluid cursor wake — purely decorative, sits behind everything and
+     never intercepts pointer events. Disabled on touch / reduced-motion. -->
+<canvas id="oceanCanvas" aria-hidden="true"></canvas>
+
 <div class="app">
 
   <!-- ───────────────────────── Sidebar ───────────────────────── -->
@@ -117,8 +121,9 @@
       <!-- ═══════════ OVERVIEW ═══════════ -->
       <section class="view is-active" data-view="overview">
 
-        <div class="hero-grid">
+        <div class="hero-grid" data-block="hero">
           <article class="card hero-card">
+            <span class="hero-glyph" aria-hidden="true">$</span>
             <div class="card-head">
               <h2>Net profit</h2>
               <span class="pill" id="heroRangeLabel">Last 12 months</span>
@@ -127,6 +132,10 @@
             <p class="hero-meta">
               <span class="delta" id="heroDelta"><span class="delta-icon" aria-hidden="true"></span><span class="delta-text">—</span></span>
               <span class="hero-meta-sub" id="heroDeltaSub">vs previous period</span>
+            </p>
+            <p class="hero-motivation" id="heroMotivation">
+              <span class="motivation-spark" aria-hidden="true"></span>
+              <span class="motivation-text">Every dollar counts. Keep building.</span>
             </p>
             <div class="hero-spark">
               <svg id="heroSpark" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Net profit trend over the period"></svg>
@@ -157,7 +166,7 @@
           </div>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2" data-block="breakdown">
           <article class="card">
             <div class="card-head">
               <div>
@@ -197,7 +206,7 @@
           </article>
         </div>
 
-        <div class="grid-2 grid-2--wide-left">
+        <div class="grid-2 grid-2--wide-left" data-block="cashflow">
           <article class="card chart-card">
             <div class="card-head">
               <div>
@@ -495,6 +504,12 @@
               </label>
             </div>
             <p class="hint">Everything is stored privately in this browser — nothing is uploaded anywhere.</p>
+            <hr class="rule">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="setMotion" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+              <span style="font-size:13px;color:var(--ink-2)">Cursor wake &amp; ambient motion</span>
+            </label>
+            <p class="hint" style="margin-top:8px">Turn off for a completely still interface. Motion is disabled automatically on touch devices and when your system asks for reduced motion.</p>
           </article>
 
           <article class="card">

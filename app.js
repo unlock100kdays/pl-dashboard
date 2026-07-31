@@ -793,6 +793,7 @@ function renderAll() {
   if (ui.detailEmployeeId) renderEmployeeDetail();
   if (ui.detailProjectId) renderProjectDetail();
   syncSelectLabels();
+  refreshReorderables();   // project grid is rebuilt each render — rewire its handles
 }
 
 function renderStorageHint() {
@@ -819,8 +820,9 @@ function renderOverview() {
 
   $('#heroRangeLabel').textContent = ui.range === 'custom' ? customRangeLabel() : RANGE_LABELS[ui.range];
   const hero = $('#heroNet');
-  hero.textContent = fmtMoney(t.net);
+  animateCount(hero, t.net, (v) => fmtMoney(v));
   hero.classList.toggle('is-negative', t.net < 0);
+  renderMotivation(t, list);
 
   // delta vs the previous equal-length window
   const prevB = previousBounds();
@@ -849,8 +851,8 @@ function renderOverview() {
     $('#heroDeltaSub').textContent = 'across all time';
   }
 
-  $('#tileIn').textContent = fmtMoney(t.income, { compact: true });
-  $('#tileOut').textContent = fmtMoney(t.expense, { compact: true });
+  animateCount($('#tileIn'), t.income, (v) => fmtMoney(v, { compact: true }));
+  animateCount($('#tileOut'), t.expense, (v) => fmtMoney(v, { compact: true }));
   $('#tileInSub').textContent = `${list.filter((x) => x.type === 'income').length} entries`;
   $('#tileOutSub').textContent = `${list.filter((x) => x.type === 'expense').length} entries`;
   $('#tileMargin').textContent = t.margin === null ? '—' : `${(t.margin * 100).toFixed(1)}%`;
@@ -858,7 +860,7 @@ function renderOverview() {
 
   const roster = state.employees.filter(isActiveEmp);
   const payrollMonthly = sum(roster, monthlyCost);
-  $('#tilePayroll').textContent = fmtMoney(payrollMonthly, { compact: true });
+  animateCount($('#tilePayroll'), payrollMonthly, (v) => fmtMoney(v, { compact: true }));
   $('#tilePayrollSub').textContent = `${roster.length} ${roster.length === 1 ? 'person' : 'people'} · per month`;
 
   drawSparkline();
@@ -2475,6 +2477,9 @@ function applyTheme(mode) {
   else document.documentElement.setAttribute('data-theme', mode);
   localStorage.setItem(THEME_KEY, mode);
   if (ui.view === 'overview') requestAnimationFrame(() => { drawFlowChart(); drawCategoryChart(); drawSparkline(); });
+  // deferred: applyTheme() runs during initial evaluation, before the
+  // `ocean` const below exists — a direct call would hit its TDZ
+  requestAnimationFrame(() => ocean.refreshPalette());
 }
 $('#themeToggle').addEventListener('click', () => {
   const current = localStorage.getItem(THEME_KEY) || 'system';
@@ -2618,6 +2623,355 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (ui.view === 'overview') { drawFlowChart(); drawCategoryChart(); drawSparkline(); }
 });
 
+/* ═══════════════════════════════════════════════════════
+   Motion & atmosphere
+   Everything below is presentation only — if any of it is switched off
+   (touch device, reduced-motion, or the Settings toggle) the dashboard
+   behaves exactly as it did before, just still.
+   ═══════════════════════════════════════════════════════ */
+const MOTION_KEY = 'pl-dashboard:motion';
+const prefersReducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// coarse pointer = no hover cursor to trail, and the wake would just cost battery
+const isCoarsePointer = () => matchMedia('(pointer: coarse)').matches;
+
+let motionOn = localStorage.getItem(MOTION_KEY) !== 'off';
+function motionAllowed() { return motionOn && !prefersReducedMotion() && !isCoarsePointer(); }
+
+function applyMotionPref() {
+  document.documentElement.classList.toggle('no-motion', !motionAllowed());
+  const box = $('#setMotion');
+  if (box) box.checked = motionOn;
+  motionAllowed() ? ocean.start() : ocean.stop();
+}
+
+/* ── the sea: a fluid wake that follows the cursor ─────── */
+const ocean = (() => {
+  const cv = $('#oceanCanvas');
+  const ctx = cv?.getContext('2d');
+  let raf = null, running = false, w = 0, h = 0, dpr = 1;
+  const parts = [];
+  const MAX = 110;
+  // pointer: `t` is where the mouse actually is, `p` is the smoothed
+  // position the wake is emitted from — the lag is what makes it read
+  // as something gliding through water rather than a hard trail
+  const t = { x: -999, y: -999 }, p = { x: -999, y: -999 };
+  let lastEmit = 0, seeded = false;
+
+  function resize() {
+    if (!cv) return;
+    dpr = Math.min(devicePixelRatio || 1, 2);   // capped: 3x on some phones is pure waste
+    w = innerWidth; h = innerHeight;
+    cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr);
+    cv.style.width = `${w}px`; cv.style.height = `${h}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function spawn(x, y, power) {
+    if (parts.length >= MAX) return;
+    const a = Math.random() * Math.PI * 2;
+    const s = (0.25 + Math.random() * 0.85) * (0.6 + power * 0.5);
+    parts.push({
+      x, y,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.16,   // slight lift, like foam rising
+      r: 16 + Math.random() * 46 + power * 26,
+      life: 1,
+      decay: 0.006 + Math.random() * 0.012,
+      warm: Math.random() < 0.62,                         // gold vs. deep-blue fleck
+    });
+  }
+
+  function ripple(x, y) {
+    for (let i = 0; i < 16; i++) spawn(x, y, 1.6);
+  }
+
+  const warmRGB = () => getComputedStyle(document.documentElement).getPropertyValue('--wake-warm').trim() || '201,162,39';
+  const coolRGB = () => getComputedStyle(document.documentElement).getPropertyValue('--wake-cool').trim() || '42,120,214';
+  let warm = warmRGB(), cool = coolRGB();
+
+  function frame(now) {
+    if (!running) return;
+    // ease the emitter toward the true pointer — this lag is the "glide"
+    p.x += (t.x - p.x) * 0.12;
+    p.y += (t.y - p.y) * 0.12;
+
+    const dx = t.x - p.x, dy = t.y - p.y;
+    const speed = Math.hypot(dx, dy);
+    if (speed > 1.5 && now - lastEmit > 16 && t.x > -900) {
+      spawn(p.x, p.y, Math.min(speed / 45, 1.6));
+      lastEmit = now;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const o = parts[i];
+      o.x += o.vx; o.y += o.vy;
+      o.vx *= 0.975; o.vy *= 0.975;
+      o.vy -= 0.006;                 // buoyancy
+      o.r *= 1.006;
+      o.life -= o.decay;
+      if (o.life <= 0) { parts.splice(i, 1); continue; }
+      const alpha = o.life * o.life * 0.3;
+      const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+      const rgb = o.warm ? warm : cool;
+      g.addColorStop(0, `rgba(${rgb},${alpha})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    raf = requestAnimationFrame(frame);
+  }
+
+  function onMove(e) {
+    t.x = e.clientX; t.y = e.clientY;
+    if (!seeded) { p.x = t.x; p.y = t.y; seeded = true; }   // don't streak in from 0,0
+  }
+
+  return {
+    start() {
+      if (!cv || running) return;
+      running = true;
+      warm = warmRGB(); cool = coolRGB();
+      resize();
+      addEventListener('pointermove', onMove, { passive: true });
+      addEventListener('pointerdown', (e) => ripple(e.clientX, e.clientY), { passive: true });
+      addEventListener('resize', resize);
+      cv.classList.add('is-live');
+      raf = requestAnimationFrame(frame);
+    },
+    stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      removeEventListener('pointermove', onMove);
+      parts.length = 0;
+      if (ctx) ctx.clearRect(0, 0, w, h);
+      cv?.classList.remove('is-live');
+    },
+    refreshPalette() { warm = warmRGB(); cool = coolRGB(); },
+  };
+})();
+
+// don't burn frames on a tab nobody's looking at
+document.addEventListener('visibilitychange', () => {
+  document.hidden ? ocean.stop() : (motionAllowed() && ocean.start());
+});
+
+$('#setMotion')?.addEventListener('change', (e) => {
+  motionOn = e.target.checked;
+  localStorage.setItem(MOTION_KEY, motionOn ? 'on' : 'off');
+  applyMotionPref();
+  toast(motionOn ? 'Motion enabled' : 'Motion switched off');
+});
+
+/* ── numbers that climb instead of snapping ────────────── */
+const easeOutExpo = (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x));
+/** Ticks an element from its previous number to the new one. Falls back
+ *  to a plain write when motion is off or the value hasn't changed. */
+function animateCount(el, to, format) {
+  if (!el) return;
+  const prev = Number(el.dataset.countVal);
+  // first ever paint has no previous value — sweep up from zero, which
+  // makes the dashboard land rather than just appear
+  const from = Number.isFinite(prev) ? prev : 0;
+  el.dataset.countVal = String(to);
+  if (!motionAllowed() || from === to) { el.textContent = format(to); return; }
+  if (el._countRaf) cancelAnimationFrame(el._countRaf);
+  const start = performance.now(), dur = 620, span = to - from;
+  const step = (now) => {
+    const k = Math.min((now - start) / dur, 1);
+    el.textContent = format(from + span * easeOutExpo(k));
+    if (k < 1) el._countRaf = requestAnimationFrame(step);
+  };
+  el._countRaf = requestAnimationFrame(step);
+}
+
+/* ── motivation, driven by the actual numbers ──────────── */
+function motivationFor(t, list) {
+  if (!list.length) return ['Every empire starts at zero. Log your first move.'];
+  if (t.net > 0 && t.margin !== null && t.margin >= 0.3) return [
+    'Margins like this are earned, not given. Keep the standard.',
+    `${(t.margin * 100).toFixed(0)}% margin. You are compounding — do not coast.`,
+    'Profitable and disciplined. Now go find the next lever.',
+  ];
+  if (t.net > 0) return [
+    'In the black. Protect it, then push further.',
+    'Momentum is real. Stack another good month on top.',
+    'You are winning quietly. Keep the receipts coming.',
+  ];
+  if (t.net < 0) return [
+    'Down this period — but the ledger is not the verdict. Adjust and go again.',
+    'Every strong balance sheet has a chapter that looked like this.',
+    'Cut what is not working. Double down on what is. Keep moving.',
+  ];
+  return ['Flat is a starting line, not a finish. Make the next move.'];
+}
+let motivationTimer = null, motivationIdx = 0;
+function renderMotivation(t, list) {
+  const el = $('.motivation-text');
+  if (!el) return;
+  const lines = motivationFor(t, list);
+  clearInterval(motivationTimer);
+  motivationIdx = motivationIdx % lines.length;
+  el.textContent = lines[motivationIdx];
+  if (lines.length < 2 || !motionAllowed()) return;
+  motivationTimer = setInterval(() => {
+    el.classList.add('is-swapping');
+    setTimeout(() => {
+      motivationIdx = (motivationIdx + 1) % lines.length;
+      el.textContent = lines[motivationIdx];
+      el.classList.remove('is-swapping');
+    }, 400);
+  }, 11000);
+}
+
+/* ═══════════════════════════════════════════════════════
+   Drag to rearrange
+   Order is persisted per-container and reapplied with CSS `order`, so
+   it survives the full re-renders that renderAll() does. Reordering
+   during a drag uses FLIP (measure → mutate → invert → play) so cards
+   glide to their new slots instead of snapping.
+   ═══════════════════════════════════════════════════════ */
+const LAYOUT_KEY = 'pl-dashboard:layout';
+function loadLayout() {
+  try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}'); } catch { return {}; }
+}
+let layout = loadLayout();
+function saveLayout() {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* non-critical */ }
+}
+
+const GRIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9h14M5 15h14"/></svg>';
+
+/** Applies the saved order to a container's items via CSS `order`. */
+function applyOrder(container, key, items) {
+  const saved = layout[key];
+  if (!saved) return;
+  items.forEach((el) => {
+    const id = el.dataset.dragId;
+    const i = saved.indexOf(id);
+    el.style.order = i === -1 ? 999 : i;
+  });
+}
+
+function makeReorderable(container, key, itemSelector, idOf) {
+  if (!container) return;
+  const items = $$(itemSelector, container).filter((el) => el.parentElement === container);
+  items.forEach((el) => {
+    el.dataset.dragId = idOf(el);
+    if (!$('.drag-handle', el)) {
+      const h = document.createElement('button');
+      h.type = 'button';
+      h.className = 'drag-handle';
+      h.title = 'Drag to rearrange';
+      h.setAttribute('aria-label', 'Drag to rearrange');
+      h.innerHTML = GRIP_SVG;
+      h.addEventListener('pointerdown', (e) => startDrag(e, el, container, key, itemSelector));
+      // never let a grab bubble into the card's own click (project cards
+      // navigate to their detail page on click)
+      h.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+      el.appendChild(h);
+    }
+  });
+  applyOrder(container, key, items);
+}
+
+function startDrag(e, el, container, key, itemSelector) {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+
+  const items = () => $$(itemSelector, container)
+    .filter((n) => n.parentElement === container)
+    .sort((a, b) => (Number(a.style.order) || 0) - (Number(b.style.order) || 0));
+
+  let list = items();
+  // normalise: make sure every item has an explicit order to reshuffle
+  list.forEach((n, i) => { if (!n.style.order) n.style.order = i; });
+  list = items();
+
+  const startX = e.clientX, startY = e.clientY;
+  let dragging = false;
+
+  const onMove = (ev) => {
+    const dx = ev.clientX - startX, dy = ev.clientY - startY;
+    if (!dragging) {
+      if (Math.hypot(dx, dy) < 6) return;   // tolerance so a click isn't read as a drag
+      dragging = true;
+      el.classList.add('is-dragging');
+      document.body.classList.add('is-reordering');
+    }
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+
+    // which slot is the pointer currently over?
+    const over = items().find((n) => {
+      if (n === el) return false;
+      const r = n.getBoundingClientRect();
+      return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+    });
+    if (!over) return;
+
+    const cur = items();
+    const from = cur.indexOf(el);
+    let to = cur.indexOf(over);
+    if (from < 0 || to < 0) return;
+
+    // land before or after the hovered card depending on which half the
+    // pointer is in — without this, a drag "sticks" one slot short of
+    // where it was aimed. Same-row neighbours compare on x, stacked
+    // ones on y, so this reads correctly in both the column layout and
+    // the 2-D project grid.
+    const r = over.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const sameRow = Math.abs(r.top - er.top) < Math.min(r.height, er.height) * 0.5;
+    const past = sameRow ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2;
+    if (past && to < from) to += 1;
+    if (!past && to > from) to -= 1;
+    if (from === to) return;
+
+    // FLIP: measure every sibling, reorder, then animate the delta away
+    const others = cur.filter((n) => n !== el);
+    const first = new Map(others.map((n) => [n, n.getBoundingClientRect()]));
+
+    const next = cur.filter((n) => n !== el);
+    next.splice(to, 0, el);
+    next.forEach((n, i) => { n.style.order = i; });
+
+    others.forEach((n) => {
+      const a = first.get(n), b = n.getBoundingClientRect();
+      const ox = a.left - b.left, oy = a.top - b.top;
+      if (!ox && !oy) return;
+      n.classList.remove('drag-shift');
+      n.style.transform = `translate(${ox}px, ${oy}px)`;
+      void n.offsetWidth;                     // flush, so the transition below actually runs
+      n.classList.add('drag-shift');
+      n.style.transform = '';
+    });
+  };
+
+  const onUp = () => {
+    removeEventListener('pointermove', onMove);
+    removeEventListener('pointerup', onUp);
+    document.body.classList.remove('is-reordering');
+    el.classList.remove('is-dragging');
+    el.style.transform = '';
+    $$(itemSelector, container).forEach((n) => { n.classList.remove('drag-shift'); n.style.transform = ''; });
+    if (!dragging) return;
+    layout[key] = items().map((n) => n.dataset.dragId);
+    saveLayout();
+    toast('Layout saved');
+  };
+
+  addEventListener('pointermove', onMove);
+  addEventListener('pointerup', onUp);
+}
+
+/** (Re)wires drag handles. Called after every render since the project
+ *  grid is rebuilt from scratch each time. */
+function refreshReorderables() {
+  makeReorderable($('.view[data-view="overview"]'), 'overview', '[data-block]', (el) => el.dataset.block);
+  makeReorderable($('#projGrid'), 'projects', '.proj-card', (el) => el.dataset.proj);
+}
+
 /* ── boot ──────────────────────────────────────────────── */
 if (!state.transactions.length && !state.employees.length && !state.projects.length
     && !localStorage.getItem(STORE_KEY)) {
@@ -2628,3 +2982,5 @@ enhanceAllSelects();
 hydrateSettings();
 renderAll();
 setView('overview');
+applyMotionPref();
+refreshReorderables();
