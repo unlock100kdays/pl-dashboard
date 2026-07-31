@@ -2477,9 +2477,6 @@ function applyTheme(mode) {
   else document.documentElement.setAttribute('data-theme', mode);
   localStorage.setItem(THEME_KEY, mode);
   if (ui.view === 'overview') requestAnimationFrame(() => { drawFlowChart(); drawCategoryChart(); drawSparkline(); });
-  // deferred: applyTheme() runs during initial evaluation, before the
-  // `ocean` const below exists — a direct call would hit its TDZ
-  requestAnimationFrame(() => ocean.refreshPalette());
 }
 $('#themeToggle').addEventListener('click', () => {
   const current = localStorage.getItem(THEME_KEY) || 'system';
@@ -2631,131 +2628,15 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
    ═══════════════════════════════════════════════════════ */
 const MOTION_KEY = 'pl-dashboard:motion';
 const prefersReducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-// coarse pointer = no hover cursor to trail, and the wake would just cost battery
-const isCoarsePointer = () => matchMedia('(pointer: coarse)').matches;
 
 let motionOn = localStorage.getItem(MOTION_KEY) !== 'off';
-function motionAllowed() { return motionOn && !prefersReducedMotion() && !isCoarsePointer(); }
+function motionAllowed() { return motionOn && !prefersReducedMotion(); }
 
 function applyMotionPref() {
   document.documentElement.classList.toggle('no-motion', !motionAllowed());
   const box = $('#setMotion');
   if (box) box.checked = motionOn;
-  motionAllowed() ? ocean.start() : ocean.stop();
 }
-
-/* ── the sea: a fluid wake that follows the cursor ─────── */
-const ocean = (() => {
-  const cv = $('#oceanCanvas');
-  const ctx = cv?.getContext('2d');
-  let raf = null, running = false, w = 0, h = 0, dpr = 1;
-  const parts = [];
-  const MAX = 110;
-  // pointer: `t` is where the mouse actually is, `p` is the smoothed
-  // position the wake is emitted from — the lag is what makes it read
-  // as something gliding through water rather than a hard trail
-  const t = { x: -999, y: -999 }, p = { x: -999, y: -999 };
-  let lastEmit = 0, seeded = false;
-
-  function resize() {
-    if (!cv) return;
-    dpr = Math.min(devicePixelRatio || 1, 2);   // capped: 3x on some phones is pure waste
-    w = innerWidth; h = innerHeight;
-    cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr);
-    cv.style.width = `${w}px`; cv.style.height = `${h}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-
-  function spawn(x, y, power) {
-    if (parts.length >= MAX) return;
-    const a = Math.random() * Math.PI * 2;
-    const s = (0.25 + Math.random() * 0.85) * (0.6 + power * 0.5);
-    parts.push({
-      x, y,
-      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.16,   // slight lift, like foam rising
-      r: 16 + Math.random() * 46 + power * 26,
-      life: 1,
-      decay: 0.006 + Math.random() * 0.012,
-      warm: Math.random() < 0.62,                         // gold vs. deep-blue fleck
-    });
-  }
-
-  function ripple(x, y) {
-    for (let i = 0; i < 16; i++) spawn(x, y, 1.6);
-  }
-
-  const warmRGB = () => getComputedStyle(document.documentElement).getPropertyValue('--wake-warm').trim() || '201,162,39';
-  const coolRGB = () => getComputedStyle(document.documentElement).getPropertyValue('--wake-cool').trim() || '42,120,214';
-  let warm = warmRGB(), cool = coolRGB();
-
-  function frame(now) {
-    if (!running) return;
-    // ease the emitter toward the true pointer — this lag is the "glide"
-    p.x += (t.x - p.x) * 0.12;
-    p.y += (t.y - p.y) * 0.12;
-
-    const dx = t.x - p.x, dy = t.y - p.y;
-    const speed = Math.hypot(dx, dy);
-    if (speed > 1.5 && now - lastEmit > 16 && t.x > -900) {
-      spawn(p.x, p.y, Math.min(speed / 45, 1.6));
-      lastEmit = now;
-    }
-
-    ctx.clearRect(0, 0, w, h);
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const o = parts[i];
-      o.x += o.vx; o.y += o.vy;
-      o.vx *= 0.975; o.vy *= 0.975;
-      o.vy -= 0.006;                 // buoyancy
-      o.r *= 1.006;
-      o.life -= o.decay;
-      if (o.life <= 0) { parts.splice(i, 1); continue; }
-      const alpha = o.life * o.life * 0.3;
-      const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
-      const rgb = o.warm ? warm : cool;
-      g.addColorStop(0, `rgba(${rgb},${alpha})`);
-      g.addColorStop(1, `rgba(${rgb},0)`);
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    raf = requestAnimationFrame(frame);
-  }
-
-  function onMove(e) {
-    t.x = e.clientX; t.y = e.clientY;
-    if (!seeded) { p.x = t.x; p.y = t.y; seeded = true; }   // don't streak in from 0,0
-  }
-
-  return {
-    start() {
-      if (!cv || running) return;
-      running = true;
-      warm = warmRGB(); cool = coolRGB();
-      resize();
-      addEventListener('pointermove', onMove, { passive: true });
-      addEventListener('pointerdown', (e) => ripple(e.clientX, e.clientY), { passive: true });
-      addEventListener('resize', resize);
-      cv.classList.add('is-live');
-      raf = requestAnimationFrame(frame);
-    },
-    stop() {
-      running = false;
-      if (raf) cancelAnimationFrame(raf);
-      removeEventListener('pointermove', onMove);
-      parts.length = 0;
-      if (ctx) ctx.clearRect(0, 0, w, h);
-      cv?.classList.remove('is-live');
-    },
-    refreshPalette() { warm = warmRGB(); cool = coolRGB(); },
-  };
-})();
-
-// don't burn frames on a tab nobody's looking at
-document.addEventListener('visibilitychange', () => {
-  document.hidden ? ocean.stop() : (motionAllowed() && ocean.start());
-});
 
 $('#setMotion')?.addEventListener('change', (e) => {
   motionOn = e.target.checked;
