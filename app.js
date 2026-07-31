@@ -19,7 +19,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 ));
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const sum = (arr, fn) => arr.reduce((a, x) => a + fn(x), 0);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+/** Local-calendar ISO date (YYYY-MM-DD).
+ *  NOT toISOString(), which converts to UTC first: east of Greenwich
+ *  that reports *yesterday* between midnight and the UTC offset (e.g.
+ *  until 05:30 in IST), which silently back-dated new entries, the
+ *  "Today" filter and subscription renewals. */
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayISO = () => isoLocal(new Date());
 
 /* ── state ─────────────────────────────────────────────── */
 const DEFAULT_CATEGORIES = [
@@ -55,6 +61,7 @@ let state = load();
 let ui = {
   view: 'overview',
   range: '12m',
+  periodOffset: 0,      // 0 = current period, -1 = the one before it…
   customStart: '',
   customEnd: '',
   breakdownDir: 'expense',
@@ -132,27 +139,94 @@ const monthLabelFull = (key) => {
 };
 
 const RANGE_LABELS = {
-  all: 'All time', ytd: 'Year to date', '12m': 'Last 12 months', '6m': 'Last 6 months',
-  '90d': 'Last 90 days', '30d': 'Last 30 days', mtd: 'Month to date', today: 'Today',
+  all: 'All time', '12m': 'Last 12 months', '6m': 'Last 6 months',
+  '90d': 'Last 90 days', '30d': 'Last 30 days', '7d': 'Last 7 days',
 };
+/** Ranges you can step backwards and forwards through, one period at a
+ *  time. Everything else is a rolling window anchored to today. */
+const PERIOD_KINDS = { day: 'Day', week: 'Week', month: 'Month', quarter: 'Quarter', year: 'Year' };
+const isPeriodKind = (r) => Object.prototype.hasOwnProperty.call(PERIOD_KINDS, r);
+
+function startOfWeek(date) {          // weeks run Monday → Sunday
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+/** Bounds for a steppable period. offset 0 = the current one, -1 the
+ *  one before it, and so on. */
+function periodBounds(kind, offset = 0) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  let s, e;
+  switch (kind) {
+    case 'day':
+      s = new Date(now); s.setDate(s.getDate() + offset); e = new Date(s); break;
+    case 'week':
+      s = startOfWeek(now); s.setDate(s.getDate() + offset * 7);
+      e = new Date(s); e.setDate(e.getDate() + 6); break;
+    case 'quarter': {
+      const q = Math.floor(now.getMonth() / 3) + offset;
+      s = new Date(now.getFullYear(), q * 3, 1);
+      e = new Date(now.getFullYear(), q * 3 + 3, 0); break;
+    }
+    case 'year':
+      s = new Date(now.getFullYear() + offset, 0, 1);
+      e = new Date(now.getFullYear() + offset, 11, 31); break;
+    case 'month':
+    default:
+      s = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      e = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0); break;
+  }
+  return { start: isoLocal(s), end: isoLocal(e) };
+}
+
+function periodLabel(kind, offset = 0) {
+  const { start, end } = periodBounds(kind, offset);
+  const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
+  const L = (d, o) => d.toLocaleDateString(undefined, o);
+  switch (kind) {
+    case 'day':
+      if (offset === 0) return 'Today';
+      if (offset === -1) return 'Yesterday';
+      return L(s, { day: 'numeric', month: 'short', year: 'numeric' });
+    case 'week': {
+      if (offset === 0) return 'This week';
+      if (offset === -1) return 'Last week';
+      const head = s.getMonth() === e.getMonth() ? `${s.getDate()}` : `${s.getDate()} ${L(s, { month: 'short' })}`;
+      return `${head} – ${e.getDate()} ${L(e, { month: 'short', year: 'numeric' })}`;
+    }
+    case 'quarter': return `Q${Math.floor(s.getMonth() / 3) + 1} ${s.getFullYear()}`;
+    case 'year':    return String(s.getFullYear());
+    case 'month':
+    default:        return L(s, { month: 'long', year: 'numeric' });
+  }
+}
 
 function customRangeLabel() {
   if (!ui.customStart || !ui.customEnd) return 'Custom range';
   return ui.customStart === ui.customEnd ? fmtDate(ui.customStart) : `${fmtDate(ui.customStart)} – ${fmtDate(ui.customEnd)}`;
 }
 
+/** One label for whatever the current selection is, used by the topbar
+ *  and the hero pill so they can never disagree. */
+function currentRangeLabel() {
+  if (ui.range === 'custom') return customRangeLabel();
+  if (isPeriodKind(ui.range)) return periodLabel(ui.range, ui.periodOffset);
+  return RANGE_LABELS[ui.range] || 'Last 12 months';
+}
+
 /** Returns {start, end} as ISO date strings; start is null for "all". */
-function rangeBounds(range = ui.range) {
-  const now = new Date();
-  const end = todayISO();
-  const back = (days) => { const d = new Date(now); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10); };
-  const backMonths = (m) => { const d = new Date(now.getFullYear(), now.getMonth() - m + 1, 1); return d.toISOString().slice(0, 10); };
+function rangeBounds(range = ui.range, offset = ui.periodOffset) {
+  if (isPeriodKind(range)) return periodBounds(range, offset);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  const end = isoLocal(now);
+  const back = (days) => { const d = new Date(now); d.setDate(d.getDate() - days + 1); return isoLocal(d); };
+  const backMonths = (m) => isoLocal(new Date(now.getFullYear(), now.getMonth() - m + 1, 1));
   switch (range) {
     case 'all': return { start: null, end: null };
-    case 'ytd': return { start: `${now.getFullYear()}-01-01`, end };
-    case 'mtd': return { start: end.slice(0, 8) + '01', end };
-    case 'today': return { start: end, end };
     case 'custom': return { start: ui.customStart || end, end: ui.customEnd || end };
+    case '7d':  return { start: back(7), end };
     case '30d': return { start: back(30), end };
     case '90d': return { start: back(90), end };
     case '6m':  return { start: backMonths(6), end };
@@ -161,15 +235,18 @@ function rangeBounds(range = ui.range) {
   }
 }
 
-/** The equal-length window immediately before the current one. */
+/** The comparable window immediately before the current one. For
+ *  stepped periods that's simply the previous period (so February is
+ *  compared against January, not "the 28 days before February"). */
 function previousBounds() {
+  if (isPeriodKind(ui.range)) return periodBounds(ui.range, ui.periodOffset - 1);
   const { start, end } = rangeBounds();
   if (!start) return null;
   const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
   const span = Math.max(1, Math.round((e - s) / 86400000) + 1);
   const pe = new Date(s); pe.setDate(pe.getDate() - 1);
   const ps = new Date(pe); ps.setDate(ps.getDate() - span + 1);
-  return { start: ps.toISOString().slice(0, 10), end: pe.toISOString().slice(0, 10) };
+  return { start: isoLocal(ps), end: isoLocal(pe) };
 }
 
 function inRange(tx, bounds) {
@@ -818,7 +895,7 @@ function renderOverview() {
   const list = txInRange();
   const t = totals(list);
 
-  $('#heroRangeLabel').textContent = ui.range === 'custom' ? customRangeLabel() : RANGE_LABELS[ui.range];
+  $('#heroRangeLabel').textContent = currentRangeLabel();
   const hero = $('#heroNet');
   animateCount(hero, t.net, (v) => fmtMoney(v));
   hero.classList.toggle('is-negative', t.net < 0);
@@ -2523,7 +2600,44 @@ $('#rangeSelect').addEventListener('change', (e) => {
   }
   rangeSelectPrevValue = e.target.value;
   ui.range = e.target.value;
+  ui.periodOffset = 0;          // always land on the current period first
+  renderPeriodBar();
   renderAll();
+});
+
+/* ── period stepper ────────────────────────────────────── */
+/** Shows the arrows only for steppable periods, and stops "next" from
+ *  walking into the future where there is nothing to show. */
+function renderPeriodBar() {
+  const bar = $('#periodBar');
+  if (!bar) return;
+  const stepping = isPeriodKind(ui.range);
+  bar.hidden = !stepping;
+  if (!stepping) return;
+  $('#periodCurrent').textContent = currentRangeLabel();
+  $('#periodNext').disabled = ui.periodOffset >= 0;
+  $('#periodCurrent').disabled = ui.periodOffset === 0;
+  bar.classList.toggle('is-past', ui.periodOffset !== 0);
+}
+function stepPeriod(by) {
+  if (!isPeriodKind(ui.range)) return;
+  const next = ui.periodOffset + by;
+  if (next > 0) return;
+  ui.periodOffset = next;
+  renderPeriodBar();
+  renderAll();
+}
+$('#periodPrev').addEventListener('click', () => stepPeriod(-1));
+$('#periodNext').addEventListener('click', () => stepPeriod(1));
+$('#periodCurrent').addEventListener('click', () => {
+  ui.periodOffset = 0; renderPeriodBar(); renderAll();
+});
+// arrow keys step the period when you're not typing into something
+document.addEventListener('keydown', (e) => {
+  if (!isPeriodKind(ui.range)) return;
+  if (e.target.matches('input, select, textarea') || document.querySelector('dialog[open]')) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); stepPeriod(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); stepPeriod(1); }
 });
 $('#customRangeForm').addEventListener('submit', (e) => {
   const f = e.target.elements;
@@ -2864,4 +2978,5 @@ hydrateSettings();
 renderAll();
 setView('overview');
 applyMotionPref();
+renderPeriodBar();
 refreshReorderables();

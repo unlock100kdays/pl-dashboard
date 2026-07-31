@@ -23,25 +23,25 @@
 
   /* brand / accent — indigo→violet. Solid tone is darkened from the
      gradient so it still clears AA as text/icon colour on white. */
-  --accent:         #5b52d8;
-  --accent-hover:   #4a41c4;
-  --accent-soft:    rgba(99, 91, 216, .10);
+  --accent:         #4f56c9;
+  --accent-hover:   #414796;
+  --accent-soft:    rgba(79, 86, 201, .09);
   --accent-ink:     #ffffff;
-  --accent-grad:    linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-  --accent-grad-hover: linear-gradient(135deg, #5457ee 0%, #7c48f4 55%, #9b3ff5 100%);
-  --accent-glow:    0 6px 22px -6px rgba(99, 91, 216, .45);
+  --accent-grad:    linear-gradient(135deg, #4f56c9 0%, #6b62dd 100%);
+  --accent-grad-hover: linear-gradient(135deg, #444bb8 0%, #5d55cf 100%);
+  --accent-glow:    0 6px 18px -8px rgba(79, 86, 201, .4);
 
   /* data: diverging pair. Money-in moved off plain blue to a cyan-lean
      sky so it can't be confused with the indigo UI accent; still a
      blue↔red diverging pair, so it stays colourblind-separable. */
-  --flow-in:        #0e7fb8;
-  --flow-in-soft:   rgba(14, 127, 184, .12);
-  --flow-out:       #e0405c;
-  --flow-out-soft:  rgba(224, 64, 92, .12);
+  --flow-in:        #2a7fa8;
+  --flow-in-soft:   rgba(42, 127, 168, .11);
+  --flow-out:       #c9556a;
+  --flow-out-soft:  rgba(201, 85, 106, .11);
 
-  /* sequential ramp — indigo→violet magnitude scale */
-  --seq-1: #3730a3; --seq-2: #4f46e5; --seq-3: #6366f1;
-  --seq-4: #8b5cf6; --seq-5: #a78bfa; --seq-6: #ddd6fe;
+  /* sequential ramp — indigo magnitude scale */
+  --seq-1: #3b4197; --seq-2: #4f56c9; --seq-3: #6b71dc;
+  --seq-4: #8a8fe6; --seq-5: #b0b4ef; --seq-6: #d6d8f7;
 
   /* status */
   --good:           #0ca30c;
@@ -79,23 +79,23 @@
     --grid:         rgba(255,255,255,.05);
     --ring:         rgba(255,255,255,.14);
 
-    --accent:       #8b5cf6;
-    --accent-hover: #a78bfa;
-    --accent-soft:  rgba(139, 92, 246, .16);
+    --accent:       #7c83f0;
+    --accent-hover: #949af5;
+    --accent-soft:  rgba(124, 131, 240, .14);
     --accent-ink:   #ffffff;
-    --accent-grad:  linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-    --accent-grad-hover: linear-gradient(135deg, #7175f4 0%, #9b74f8 55%, #b56ef9 100%);
-    --accent-glow:  0 8px 28px -6px rgba(139, 92, 246, .55);
+    --accent-grad:  linear-gradient(135deg, #5d64e0 0%, #7c6ff0 100%);
+    --accent-grad-hover: linear-gradient(135deg, #6b72e8 0%, #8b7ef5 100%);
+    --accent-glow:  0 6px 20px -8px rgba(124, 131, 240, .5);
 
-    --flow-in:       #38bdf8;
-    --flow-in-soft:  rgba(56, 189, 248, .16);
-    --flow-out:      #fb7185;
-    --flow-out-soft: rgba(251, 113, 133, .16);
+    --flow-in:       #4ea8dd;
+    --flow-in-soft:  rgba(78, 168, 221, .15);
+    --flow-out:      #e07a8c;
+    --flow-out-soft: rgba(224, 122, 140, .15);
 
-    --seq-1: #ddd6fe; --seq-2: #c4b5fd; --seq-3: #a78bfa;
-    --seq-4: #8b5cf6; --seq-5: #6d4ae0; --seq-6: #4c35b8;
+    --seq-1: #c7cbf7; --seq-2: #aab0f2; --seq-3: #8f96ec;
+    --seq-4: #757ce4; --seq-5: #5d64d6; --seq-6: #474dad;
 
-    --good-text:    #34d399;
+    --good-text:    #4ec9a0;
     --date-icon-filter: invert(1);
 
     --glass-bg:   rgba(255, 255, 255, .04);
@@ -121,23 +121,24 @@
   --grid:         rgba(255,255,255,.05);
   --ring:         rgba(255,255,255,.14);
 
-  --accent:       #8b5cf6;
-  --accent-hover: #a78bfa;
-  --accent-soft:  rgba(139, 92, 246, .16);
+  /* restrained indigo — the gradient is a narrow sweep, not a rainbow */
+  --accent:       #7c83f0;
+  --accent-hover: #949af5;
+  --accent-soft:  rgba(124, 131, 240, .14);
   --accent-ink:   #ffffff;
-  --accent-grad:  linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-  --accent-grad-hover: linear-gradient(135deg, #7175f4 0%, #9b74f8 55%, #b56ef9 100%);
-  --accent-glow:  0 8px 28px -6px rgba(139, 92, 246, .55);
+  --accent-grad:  linear-gradient(135deg, #5d64e0 0%, #7c6ff0 100%);
+  --accent-grad-hover: linear-gradient(135deg, #6b72e8 0%, #8b7ef5 100%);
+  --accent-glow:  0 6px 20px -8px rgba(124, 131, 240, .5);
 
-  --flow-in:       #38bdf8;
-  --flow-in-soft:  rgba(56, 189, 248, .16);
-  --flow-out:      #fb7185;
-  --flow-out-soft: rgba(251, 113, 133, .16);
+  --flow-in:       #4ea8dd;
+  --flow-in-soft:  rgba(78, 168, 221, .15);
+  --flow-out:      #e07a8c;
+  --flow-out-soft: rgba(224, 122, 140, .15);
 
-  --seq-1: #ddd6fe; --seq-2: #c4b5fd; --seq-3: #a78bfa;
-  --seq-4: #8b5cf6; --seq-5: #6d4ae0; --seq-6: #4c35b8;
+  --seq-1: #c7cbf7; --seq-2: #aab0f2; --seq-3: #8f96ec;
+  --seq-4: #757ce4; --seq-5: #5d64d6; --seq-6: #474dad;
 
-  --good-text:    #34d399;
+  --good-text:    #4ec9a0;
   --date-icon-filter: invert(1);
 
   --glass-bg:   rgba(255, 255, 255, .04);
@@ -457,6 +458,28 @@ html.no-motion .proj-card:hover { transform: none !important; }
 .csel-panel::-webkit-scrollbar { width: 8px; }
 .csel-panel::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
 
+/* ── period stepper ────────────────────────────────────── */
+.period-bar {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 38px; padding: 0 3px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--surface);
+}
+.period-bar[hidden] { display: none; }
+.period-step { width: 28px; height: 30px; border-radius: 7px; }
+.period-step svg { width: 16px; height: 16px; }
+.period-step:disabled { opacity: .32; pointer-events: none; }
+.period-current {
+  min-width: 116px; padding: 0 10px; height: 30px; border-radius: 7px;
+  font-size: 13px; font-weight: 560; color: var(--ink);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.period-current:hover:not(:disabled) { background: var(--surface-sunk); color: var(--accent); }
+.period-current:disabled { cursor: default; }
+/* viewing a past period is a state worth signalling */
+.period-bar.is-past { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.period-bar.is-past .period-current { color: var(--accent); }
+
 .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--surface-sunk); }
 .seg-btn {
   padding: 5px 12px; border-radius: 7px;
@@ -517,18 +540,18 @@ html.no-motion .proj-card:hover { transform: none !important; }
 .hero-grid { display: grid; grid-template-columns: 1.05fr 1.6fr; gap: 22px; }
 .hero-card { display: flex; flex-direction: column; position: relative; overflow: hidden; }
 .hero-card::before {
-  content: ""; position: absolute; inset: -45% -25% auto auto; width: 340px; height: 340px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 26%, transparent) 0%, transparent 68%);
+  content: ""; position: absolute; inset: -40% -22% auto auto; width: 300px; height: 300px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 13%, transparent) 0%, transparent 70%);
   pointer-events: none;
 }
 .hero-card .card-head { margin-bottom: 10px; }
+/* solid, not gradient — a headline financial figure should read as
+   authoritative, and gradient text at this size looks like marketing */
 .hero-figure {
-  font-size: 54px; font-weight: 680; letter-spacing: -.038em; line-height: 1.04;
-  margin: 2px 0 6px; width: fit-content;
-  background: linear-gradient(120deg, var(--ink) 0%, var(--ink) 40%, color-mix(in srgb, var(--accent) 85%, white) 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-size: 54px; font-weight: 660; letter-spacing: -.036em; line-height: 1.04;
+  margin: 2px 0 6px; color: var(--ink);
 }
-.hero-figure.is-negative { background: none; color: var(--critical); }
+.hero-figure.is-negative { color: var(--critical); }
 .hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
 .hero-meta-sub { color: var(--ink-muted); }
 .delta {
@@ -545,12 +568,11 @@ html.no-motion .proj-card:hover { transform: none !important; }
 /* oversized dollar watermark — the theme motif, kept low-contrast so it
    never competes with the figure sitting on top of it */
 .hero-glyph {
-  position: absolute; right: -10px; bottom: -52px;
-  font-size: 210px; font-weight: 700; line-height: 1;
+  position: absolute; right: -6px; bottom: -56px;
+  font-size: 190px; font-weight: 600; line-height: 1;
   pointer-events: none; user-select: none;
-  letter-spacing: -.05em; opacity: .12;
-  background: var(--accent-grad);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+  letter-spacing: -.05em; opacity: .05;
+  color: var(--accent);
 }
 
 /* motivational line — reads off real performance, see motivationFor() */

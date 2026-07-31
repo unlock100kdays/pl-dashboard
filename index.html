@@ -91,18 +91,36 @@
         <button class="icon-btn sync-indicator sync-indicator--off" id="sheetsIndicator" data-goto="settings" title="Google Sheets — not connected" aria-label="Google Sheets sync status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A5.5 5.5 0 0 1 17 8.5a4 4 0 0 1-1 7.5H7z"/></svg>
         </button>
+        <div class="period-bar" id="periodBar">
+          <button class="icon-btn period-step" id="periodPrev" aria-label="Previous period" title="Previous period">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l-6 6 6 6"/></svg>
+          </button>
+          <button class="period-current" id="periodCurrent" title="Jump back to the current period">Today</button>
+          <button class="icon-btn period-step" id="periodNext" aria-label="Next period" title="Next period">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6l6 6-6 6"/></svg>
+          </button>
+        </div>
         <label class="select-wrap" id="rangeWrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/></svg>
           <select id="rangeSelect" aria-label="Date range">
-            <option value="all">All time</option>
-            <option value="ytd">Year to date</option>
-            <option value="12m" selected>Last 12 months</option>
-            <option value="6m">Last 6 months</option>
-            <option value="90d">Last 90 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="mtd">Month to date</option>
-            <option value="today">Today</option>
-            <option value="custom">Custom range…</option>
+            <optgroup label="Rolling">
+              <option value="12m" selected>Last 12 months</option>
+              <option value="6m">Last 6 months</option>
+              <option value="90d">Last 90 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="7d">Last 7 days</option>
+              <option value="all">All time</option>
+            </optgroup>
+            <optgroup label="Browse by period">
+              <option value="year">Year</option>
+              <option value="quarter">Quarter</option>
+              <option value="month">Month</option>
+              <option value="week">Week</option>
+              <option value="day">Day</option>
+            </optgroup>
+            <optgroup label="Exact dates">
+              <option value="custom">Custom range…</option>
+            </optgroup>
           </select>
         </label>
         <button class="primary-btn" id="addTxBtn">
