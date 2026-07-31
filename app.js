@@ -611,6 +611,163 @@ function emptyBlock(title, text, action = '', icon = 'generic') {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Custom dropdown — progressive enhancement over <select>.
+   The native <select> stays in the DOM (hidden) as the single source
+   of truth: every existing .value read/write and 'change' listener
+   elsewhere in this file keeps working completely unmodified. This
+   only replaces how the control is *drawn* and *opened*, because no
+   browser gives CSS control over a native <select>'s popup (hover
+   states, accent colours, open/close animation are all impossible
+   there regardless of color-scheme).
+   ═══════════════════════════════════════════════════════ */
+function enhanceSelect(select) {
+  if (!select || select.dataset.enhanced) return;
+  select.dataset.enhanced = '1';
+  select.classList.add('csel-native');
+
+  const wrap = document.createElement('span');
+  wrap.className = 'csel';
+  const wrapId = `csel-${uid()}`;
+  select.parentNode.insertBefore(wrap, select);
+  wrap.appendChild(select);
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'csel-trigger';
+  if (select.id) trigger.dataset.for = select.id;
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.innerHTML = '<span class="csel-label"></span>' +
+    '<svg class="csel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  wrap.appendChild(trigger);
+
+  const panel = document.createElement('ul');
+  panel.className = 'csel-panel';
+  panel.setAttribute('role', 'listbox');
+  panel.tabIndex = -1;
+  panel.hidden = true;
+  wrap.appendChild(panel);
+
+  let activeIndex = -1;
+
+  const syncLabel = () => {
+    trigger.disabled = select.disabled;
+    trigger.classList.toggle('is-disabled', select.disabled);
+    const opt = select.selectedOptions[0];
+    trigger.querySelector('.csel-label').textContent = opt ? opt.textContent : '';
+  };
+
+  const closePanel = (focusTrigger) => {
+    if (panel.hidden) return;
+    panel.hidden = true;
+    wrap.classList.remove('is-open');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.removeAttribute('aria-activedescendant');
+    if (focusTrigger) trigger.focus();
+    document.removeEventListener('pointerdown', onDocPointerDown, true);
+  };
+
+  const onDocPointerDown = (e) => { if (!wrap.contains(e.target)) closePanel(false); };
+
+  const buildOptions = () => {
+    let html = '', i = 0;
+    for (const node of select.children) {
+      if (node.tagName === 'OPTGROUP') {
+        html += `<li class="csel-group" role="presentation">${esc(node.label)}</li>`;
+        for (const opt of node.children) { html += optionHtml(opt, i); i++; }
+      } else if (node.tagName === 'OPTION') {
+        html += optionHtml(node, i); i++;
+      }
+    }
+    panel.innerHTML = html;
+    activeIndex = [...select.options].findIndex((o) => o.selected);
+    if (activeIndex < 0) activeIndex = 0;
+  };
+  function optionHtml(o, i) {
+    return `<li role="option" id="${wrapId}-opt-${i}" data-i="${i}" class="csel-option${o.selected ? ' is-selected' : ''}"${o.disabled ? ' aria-disabled="true"' : ''}>${esc(o.textContent)}</li>`;
+  }
+
+  const items = () => $$('.csel-option', panel);
+
+  const highlight = (i) => {
+    items().forEach((el, idx) => el.classList.toggle('is-active', idx === i));
+    const el = items()[i];
+    if (el) { trigger.setAttribute('aria-activedescendant', el.id); el.scrollIntoView({ block: 'nearest' }); }
+  };
+
+  const openPanel = () => {
+    if (select.disabled) return;
+    buildOptions();
+    const r = trigger.getBoundingClientRect(); // wrap is display:contents — has no box of its own
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+    panel.style.left = `${Math.max(8, r.left)}px`;
+    panel.style.width = `${Math.max(r.width, 180)}px`;
+    panel.style.maxHeight = `${Math.max(120, (openUp ? spaceAbove : spaceBelow) - 16)}px`;
+    panel.classList.toggle('csel-panel--up', openUp);
+    if (openUp) { panel.style.top = ''; panel.style.bottom = `${window.innerHeight - r.top + 6}px`; }
+    else { panel.style.bottom = ''; panel.style.top = `${r.bottom + 6}px`; }
+    panel.hidden = false;
+    wrap.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    highlight(activeIndex);
+    panel.focus();
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+  };
+
+  const choose = (i) => {
+    const opt = select.options[i];
+    if (!opt || opt.disabled) return;
+    select.value = opt.value;
+    syncLabel();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    closePanel(true);
+  };
+
+  trigger.addEventListener('click', () => { panel.hidden ? openPanel() : closePanel(true); });
+  trigger.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (panel.hidden) openPanel();
+    }
+  });
+
+  panel.addEventListener('keydown', (e) => {
+    const list = items();
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(list.length - 1, activeIndex + 1); highlight(activeIndex); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(0, activeIndex - 1); highlight(activeIndex); }
+    else if (e.key === 'Home') { e.preventDefault(); activeIndex = 0; highlight(activeIndex); }
+    else if (e.key === 'End') { e.preventDefault(); activeIndex = list.length - 1; highlight(activeIndex); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(activeIndex); }
+    else if (e.key === 'Escape') { e.preventDefault(); closePanel(true); }
+    else if (e.key === 'Tab') { closePanel(false); }
+    else if (e.key.length === 1) {
+      const start = (activeIndex + 1) % list.length;
+      for (let k = 0; k < list.length; k++) {
+        const idx = (start + k) % list.length;
+        if (list[idx].textContent.trim().toLowerCase().startsWith(e.key.toLowerCase())) { activeIndex = idx; highlight(idx); break; }
+      }
+    }
+  });
+
+  panel.addEventListener('click', (e) => {
+    const li = e.target.closest('.csel-option');
+    if (li) choose(Number(li.dataset.i));
+  });
+  panel.addEventListener('pointermove', (e) => {
+    const li = e.target.closest('.csel-option');
+    if (li) { const i = Number(li.dataset.i); if (i !== activeIndex) { activeIndex = i; highlight(activeIndex); } }
+  });
+
+  select._syncLabel = syncLabel;
+  syncLabel();
+}
+
+function enhanceAllSelects(root = document) { $$('select', root).forEach(enhanceSelect); }
+function syncSelectLabels(root = document) { $$('select[data-enhanced]', root).forEach((s) => s._syncLabel && s._syncLabel()); }
+
+/* ═══════════════════════════════════════════════════════
    Views
    ═══════════════════════════════════════════════════════ */
 function renderAll() {
@@ -632,6 +789,7 @@ function renderAll() {
   renderStorageHint();
   if (ui.detailEmployeeId) renderEmployeeDetail();
   if (ui.detailProjectId) renderProjectDetail();
+  syncSelectLabels();
 }
 
 function renderStorageHint() {
@@ -1541,6 +1699,7 @@ function openSub(id) {
     el.renewalDate.value = todayISO();
     el.currency.value = state.settings.currency || 'USD';
   }
+  syncSelectLabels(form);
   $('#subModal').showModal();
 }
 
@@ -1730,6 +1889,7 @@ function openTx(id) {
     if (el.subscriptionId) el.subscriptionId.value = editingTx.subscriptionId || '';
     if (el.vendor) el.vendor.value = editingTx.vendor || '';
   }
+  syncSelectLabels(form);
   $('#txModal').showModal();
   setTimeout(() => el.amount.focus(), 50);
 }
@@ -1790,6 +1950,7 @@ function openProj(id) {
     el.endDate.value = editingProj.endDate || '';
     el.description.value = editingProj.description || '';
   } else el.startDate.value = todayISO();
+  syncSelectLabels(form);
   $('#projModal').showModal();
 }
 
@@ -1838,6 +1999,7 @@ function openEmp(id) {
     $('#empProject').value = editingEmp.project || '';
   } else el.startDate.value = todayISO();
   updateEmpHint();
+  syncSelectLabels(form);
   $('#empModal').showModal();
 }
 
@@ -1888,6 +2050,7 @@ function openCat(id) {
   $('#catModalTitle').textContent = editingCat ? 'Edit category' : 'New category';
   $('#catDelete').hidden = !editingCat;
   if (editingCat) { form.elements.name.value = editingCat.name; form.elements.type.value = editingCat.type; }
+  syncSelectLabels(form);
   $('#catModal').showModal();
 }
 
@@ -1919,6 +2082,7 @@ function openPayroll() {
   const form = $('#payrollForm');
   form.elements.date.value = todayISO();
   form.elements.period.value = 'monthly';
+  syncSelectLabels(form);
   $('#payrollList').innerHTML = roster.map((e) => {
     const variable = isVariableSalary(e);
     return `<li>
@@ -2201,7 +2365,7 @@ $('#customRangeForm').addEventListener('submit', (e) => {
   renderAll();
 });
 $('#customRangeModal').addEventListener('close', () => {
-  if (!customRangeApplied) $('#rangeSelect').value = rangeSelectPrevValue;
+  if (!customRangeApplied) { $('#rangeSelect').value = rangeSelectPrevValue; syncSelectLabels(); }
   customRangeApplied = false;
 });
 $('#customRangeCancel').addEventListener('click', () => $('#customRangeModal').close());
@@ -2290,6 +2454,7 @@ if (!state.transactions.length && !state.employees.length && !state.projects.len
   seedDemo();           // first visit: show the dashboard with a worked example
 }
 advanceSubscriptions();
+enhanceAllSelects();
 hydrateSettings();
 renderAll();
 setView('overview');
