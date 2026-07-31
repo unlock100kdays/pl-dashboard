@@ -747,7 +747,10 @@ function enhanceSelect(select) {
     document.removeEventListener('pointerdown', onDocPointerDown, true);
   };
 
-  const onDocPointerDown = (e) => { if (!wrap.contains(e.target)) closePanel(false); };
+  // panel is portalled to <body> while open, so it is no longer inside wrap
+  const onDocPointerDown = (e) => {
+    if (!wrap.contains(e.target) && !panel.contains(e.target)) closePanel(false);
+  };
 
   const buildOptions = () => {
     let html = '', i = 0;
@@ -778,6 +781,12 @@ function enhanceSelect(select) {
   const openPanel = () => {
     if (select.disabled) return;
     buildOptions();
+    // Portal to <body> before measuring. position:fixed resolves against
+    // the nearest ancestor with a transform / filter / will-change /
+    // backdrop-filter, not the viewport — and cards carry a hover
+    // transform, so a panel left inside one gets anchored to the card
+    // instead. Re-parenting to body removes every such ancestor.
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
     const r = trigger.getBoundingClientRect(); // wrap is display:contents — has no box of its own
     const spaceBelow = window.innerHeight - r.bottom;
     const spaceAbove = r.top;
@@ -2526,22 +2535,7 @@ const VIEW_META = {
   settings:     ['Settings',     'Company details, backups and data'],
 };
 
-/* ── module-change interstitial ─────────────────────────── */
-let hypeTimer = null, hypeBooted = false;
-/** Fires the full-screen hype wipe. Skipped on the very first paint
- *  (you haven't navigated anywhere yet) and when motion is off. */
-function playHype() {
-  const el = $('#hype');
-  if (!el || !hypeBooted || !motionAllowed()) return;
-  el.classList.remove('is-on');
-  void el.offsetWidth;                 // restart the animation mid-flight
-  el.classList.add('is-on');
-  clearTimeout(hypeTimer);
-  hypeTimer = setTimeout(() => el.classList.remove('is-on'), 900);
-}
-
 function setView(name) {
-  if (name !== ui.view) playHype();
   ui.view = name;
   $$('.nav-item').forEach((b) => b.classList.toggle('is-active', b.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('is-active', v.dataset.view === name));
@@ -2800,26 +2794,6 @@ function animateCount(el, to, format) {
   el._countRaf = requestAnimationFrame(step);
 }
 
-/** Replays a figure's count-up from zero. Used on hover so any number
- *  on the page can be "re-read" on demand. Delegated, so it keeps
- *  working across the full re-renders renderAll() does. */
-function replayCount(el) {
-  if (!el || !motionAllowed()) return;
-  const to = Number(el.dataset.countVal);
-  if (!Number.isFinite(to) || el._countRaf) return;   // don't stack replays
-  const fmt = el._countFmt;
-  if (!fmt) return;
-  el.dataset.countVal = '0';
-  animateCount(el, to, fmt);
-}
-document.addEventListener('pointerenter', (e) => {
-  const t = e.target;
-  if (!(t instanceof Element)) return;
-  const card = t.closest('.tile, .hero-card');
-  if (!card) return;
-  $$('[data-count-val]', card).forEach(replayCount);
-}, true);
-
 /* ── motivation, driven by the actual numbers ──────────── */
 function motivationFor(t, list) {
   if (!list.length) return ['Every empire starts at zero. Log your first move.'];
@@ -3019,4 +2993,3 @@ setView('overview');
 applyMotionPref();
 renderPeriodBar();
 refreshReorderables();
-hypeBooted = true;   // arm the interstitial only after the first paint
