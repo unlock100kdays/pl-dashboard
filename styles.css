@@ -313,6 +313,24 @@ svg { display: block; }
 .icon-btn svg { width: 18px; height: 18px; }
 .icon-btn:hover { background: var(--surface-sunk); color: var(--accent); transform: translateY(-1px) scale(1.04); }
 
+/* ── Google Sheets sync indicator ──────────────────────── */
+.sync-indicator { position: relative; }
+.sync-indicator::after {
+  content: ""; position: absolute; top: 6px; right: 6px;
+  width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--surface);
+  background: var(--ink-muted); transition: background .2s var(--ease);
+}
+.sync-indicator--ok::after { background: var(--good-text); }
+.sync-indicator--busy::after { background: var(--warning); animation: syncPulse 1s ease-in-out infinite; }
+.sync-indicator--error::after { background: var(--critical); }
+.sync-indicator--off::after { background: var(--ink-muted); }
+@keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.sheets-log-row { display: flex; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.sheets-log-row:last-child { border-bottom: 0; }
+.sheets-log-row span:first-child { color: var(--ink-muted); white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+.sheets-log-row span:last-child { color: var(--ink-2); }
+.sheets-log-row.is-bad span:last-child { color: var(--critical); }
+
 .select-wrap, .search-wrap {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 0 12px; height: 38px; border-radius: var(--r-sm);

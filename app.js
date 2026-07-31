@@ -85,6 +85,9 @@ function save() {
   } catch (err) {
     toast('Could not save — browser storage is full', 'bad');
   }
+  // single call site — every CRUD path in the app already funnels through
+  // save(), so this is the one place Sheets sync can't be missed
+  scheduleSheetsSync();
 }
 
 /* ── money & dates ─────────────────────────────────────── */
@@ -2165,6 +2168,172 @@ $('#confirmOk').addEventListener('click', () => { $('#confirmModal').close(); co
 $('#confirmModal').addEventListener('close', () => { confirmResolve?.(false); confirmResolve = null; });
 
 /* ═══════════════════════════════════════════════════════
+   Google Sheets sync — the dashboard stays the source of truth; this
+   mirrors it into a spreadsheet as a live backup/reporting layer.
+   Talks to a Cloudflare Pages Function (functions/api/sheets-sync.js)
+   that holds the Google service-account credentials server-side —
+   nothing in this file ever sees the private key.
+   ═══════════════════════════════════════════════════════ */
+const SHEETS_ENDPOINT = '/api/sheets-sync';
+const SHEETS_META_KEY = 'pl-dashboard:sheets';
+
+function loadSheetsMeta() {
+  try {
+    const p = JSON.parse(localStorage.getItem(SHEETS_META_KEY) || '{}');
+    return {
+      autoSync: p.autoSync !== false,
+      connected: p.connected || false,
+      lastSyncAt: p.lastSyncAt || null,
+      lastStatus: p.lastStatus || 'idle', // idle | pending | syncing | success | error
+      log: Array.isArray(p.log) ? p.log : [],
+    };
+  } catch {
+    return { autoSync: true, connected: false, lastSyncAt: null, lastStatus: 'idle', log: [] };
+  }
+}
+let sheetsMeta = loadSheetsMeta();
+function saveSheetsMeta() {
+  try { localStorage.setItem(SHEETS_META_KEY, JSON.stringify(sheetsMeta)); } catch { /* non-critical */ }
+}
+function sheetsLog(type, message) {
+  sheetsMeta.log.unshift({ time: Date.now(), type, message });
+  sheetsMeta.log = sheetsMeta.log.slice(0, 20);
+  saveSheetsMeta();
+  renderSheetsPanel();
+}
+
+/** Resolves the friendly display strings the spreadsheet should show
+ *  (names, not internal ids) and recomputes the derived financial
+ *  columns (Projects' revenue/expenses/profit, Employees' total paid)
+ *  using the exact same totals()/sum() helpers the dashboard itself
+ *  renders from — never stored redundantly in state. */
+function buildSheetsPayload() {
+  const empName = (id) => state.employees.find((e) => e.id === id)?.name || '';
+  const subPlatform = (id) => state.subscriptions.find((sub) => sub.id === id)?.platform || '';
+
+  const transactions = state.transactions.map((t) => ({
+    date: t.date, type: t.type, category: catName(t.category), project: projName(t.project) || '',
+    employee: empName(t.employee), subscription: subPlatform(t.subscriptionId), vendor: t.vendor || '',
+    method: t.method || '', amount: Number(t.amount) || 0, currency: state.settings.currency || 'USD',
+    notes: t.description || '',
+  }));
+
+  const projects = state.projects.map((p) => {
+    const tot = totals(state.transactions.filter((t) => t.project === p.id));
+    return { name: p.name, revenue: tot.income, expenses: tot.expense, profit: tot.net, status: p.status || '', client: p.client || '' };
+  });
+
+  const employees = state.employees.map((e) => ({
+    name: e.name,
+    salaryType: FREQ_SELECT_LABEL[e.frequency] || e.frequency || '',
+    salary: Number(e.salary) || 0,
+    totalPaid: sum(state.transactions.filter((t) => t.employee === e.id), (t) => Number(t.amount) || 0),
+    status: e.status || '',
+  }));
+
+  const subscriptions = state.subscriptions.map((sub) => ({
+    platform: sub.platform, monthlyCost: monthlySubCost(sub), renewalDate: sub.renewalDate || '',
+    paymentMethod: sub.paymentMethod || '', status: sub.status || '',
+  }));
+
+  return { transactions, projects, employees, subscriptions, paymentMethods: state.paymentMethods.map((m) => m.name) };
+}
+
+let sheetsSyncTimer = null;
+/** Called from the single save() call site — debounces rapid successive
+ *  saves into one sync call, and self-heals from failures since every
+ *  sync sends the complete current state rather than a queued diff. */
+function scheduleSheetsSync() {
+  if (sheetsMeta.lastStatus !== 'syncing') sheetsMeta.lastStatus = 'pending';
+  renderSyncIndicator();
+  clearTimeout(sheetsSyncTimer);
+  sheetsSyncTimer = setTimeout(() => {
+    if (sheetsMeta.autoSync) runSheetsSync();
+    else renderSyncIndicator();
+  }, 800);
+}
+
+async function runSheetsSync() {
+  clearTimeout(sheetsSyncTimer);
+  sheetsMeta.lastStatus = 'syncing';
+  renderSyncIndicator();
+  try {
+    const resp = await fetch(SHEETS_ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildSheetsPayload()),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || `Sync failed (${resp.status})`);
+    sheetsMeta.lastStatus = 'success';
+    sheetsMeta.lastSyncAt = Date.now();
+    sheetsMeta.connected = true;
+    sheetsLog('ok', 'Synced successfully');
+  } catch (err) {
+    sheetsMeta.lastStatus = 'error';
+    sheetsLog('error', String(err.message || err));
+  }
+  saveSheetsMeta();
+  renderSyncIndicator();
+}
+
+async function testSheetsConnection() {
+  sheetsMeta.lastStatus = 'syncing';
+  renderSyncIndicator();
+  try {
+    const resp = await fetch(SHEETS_ENDPOINT);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || `Connection failed (${resp.status})`);
+    sheetsMeta.connected = true;
+    sheetsMeta.lastStatus = 'success';
+    sheetsLog('ok', `Connected — "${data.title}" (${(data.sheets || []).join(', ')})`);
+    toast('Connected to Google Sheets');
+  } catch (err) {
+    sheetsMeta.connected = false;
+    sheetsMeta.lastStatus = 'error';
+    sheetsLog('error', String(err.message || err));
+    toast('Could not connect to Google Sheets', 'bad');
+  }
+  saveSheetsMeta();
+  renderSyncIndicator();
+}
+
+function renderSyncIndicator() {
+  const btn = $('#sheetsIndicator');
+  if (!btn) return;
+  const st = sheetsMeta.lastStatus;
+  const busy = st === 'syncing' || st === 'pending';
+  const mode = !sheetsMeta.connected && st !== 'error' ? 'off' : st === 'error' ? 'error' : busy ? 'busy' : 'ok';
+  const label = mode === 'off' ? 'Google Sheets — not connected'
+    : mode === 'error' ? 'Google Sheets — sync error'
+    : mode === 'busy' ? 'Google Sheets — syncing…'
+    : 'Google Sheets — synced';
+  btn.className = `icon-btn sync-indicator sync-indicator--${mode}`;
+  btn.title = sheetsMeta.lastSyncAt ? `${label} (last: ${new Date(sheetsMeta.lastSyncAt).toLocaleString()})` : label;
+}
+
+function renderSheetsPanel() {
+  const toggle = $('#sheetsAutoSync');
+  if (!toggle) return; // Settings markup not present yet — fine, called again once it is
+  toggle.checked = sheetsMeta.autoSync;
+  $('#sheetsStatusPill').textContent = sheetsMeta.connected ? 'Connected' : 'Not connected';
+  $('#sheetsStatusPill').className = `status ${sheetsMeta.connected ? 'status--active' : 'status--off'}`;
+  $('#sheetsLastSync').textContent = sheetsMeta.lastSyncAt ? new Date(sheetsMeta.lastSyncAt).toLocaleString() : 'Never';
+  const logHost = $('#sheetsLogList');
+  logHost.innerHTML = sheetsMeta.log.length
+    ? sheetsMeta.log.map((e) => `<li class="sheets-log-row${e.type === 'error' ? ' is-bad' : ''}"><span>${new Date(e.time).toLocaleTimeString()}</span><span>${esc(e.message)}</span></li>`).join('')
+    : '<li class="sheets-log-row"><span>—</span><span>No sync activity yet</span></li>';
+  renderSyncIndicator();
+}
+
+$('#sheetsConnectBtn')?.addEventListener('click', testSheetsConnection);
+$('#sheetsSyncNowBtn')?.addEventListener('click', runSheetsSync);
+$('#sheetsAutoSync')?.addEventListener('change', (e) => {
+  sheetsMeta.autoSync = e.target.checked;
+  saveSheetsMeta();
+  toast(e.target.checked ? 'Auto sync enabled' : 'Auto sync disabled');
+});
+
+/* ═══════════════════════════════════════════════════════
    Import / export
    ═══════════════════════════════════════════════════════ */
 const csvCell = (v) => {
@@ -2429,6 +2598,7 @@ function hydrateSettings() {
   $('#setCompany').value = state.settings.company || '';
   $('#setCurrency').value = state.settings.currency || 'USD';
   renderStorageHint();
+  renderSheetsPanel();
 }
 
 /* keyboard shortcuts */
