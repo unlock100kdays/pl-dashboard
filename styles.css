@@ -23,25 +23,31 @@
 
   /* brand / accent — indigo→violet. Solid tone is darkened from the
      gradient so it still clears AA as text/icon colour on white. */
-  --accent:         #4f56c9;
-  --accent-hover:   #414796;
-  --accent-soft:    rgba(79, 86, 201, .09);
-  --accent-ink:     #ffffff;
-  --accent-grad:    linear-gradient(135deg, #4f56c9 0%, #6b62dd 100%);
-  --accent-grad-hover: linear-gradient(135deg, #444bb8 0%, #5d55cf 100%);
-  --accent-glow:    0 6px 18px -8px rgba(79, 86, 201, .4);
+  /* lime is unreadable as text on white, so the flat --accent is a deep
+     olive for text/icons while fills keep the bright chartreuse with
+     dark ink on top */
+  --accent:         #55700f;
+  --accent-hover:   #445a0b;
+  --accent-soft:    rgba(85, 112, 15, .10);
+  --accent-ink:     #161a08;
+  --accent-grad:    linear-gradient(135deg, #c2ea45 0%, #a5d626 100%);
+  --accent-grad-hover: linear-gradient(135deg, #cdef62 0%, #b2e034 100%);
+  --accent-glow:    0 6px 18px -8px rgba(140, 190, 40, .55);
+  --violet:         #7c3aed;
+  --violet-soft:    rgba(124, 58, 237, .10);
+  --violet-grad:    linear-gradient(135deg, #7c3aed 0%, #9d5cf5 100%);
 
   /* data: diverging pair. Money-in moved off plain blue to a cyan-lean
      sky so it can't be confused with the indigo UI accent; still a
      blue↔red diverging pair, so it stays colourblind-separable. */
-  --flow-in:        #2a7fa8;
-  --flow-in-soft:   rgba(42, 127, 168, .11);
+  --flow-in:        #1f7fa3;
+  --flow-in-soft:   rgba(31, 127, 163, .11);
   --flow-out:       #c9556a;
   --flow-out-soft:  rgba(201, 85, 106, .11);
 
-  /* sequential ramp — indigo magnitude scale */
-  --seq-1: #3b4197; --seq-2: #4f56c9; --seq-3: #6b71dc;
-  --seq-4: #8a8fe6; --seq-5: #b0b4ef; --seq-6: #d6d8f7;
+  /* single-hue violet magnitude scale */
+  --seq-1: #4c1d95; --seq-2: #6d28d9; --seq-3: #7c3aed;
+  --seq-4: #9d5cf5; --seq-5: #bf9bfa; --seq-6: #ddd0fd;
 
   /* status */
   --good:           #0ca30c;
@@ -79,23 +85,29 @@
     --grid:         rgba(255,255,255,.05);
     --ring:         rgba(255,255,255,.14);
 
-    --accent:       #7c83f0;
-    --accent-hover: #949af5;
-    --accent-soft:  rgba(124, 131, 240, .14);
-    --accent-ink:   #ffffff;
-    --accent-grad:  linear-gradient(135deg, #5d64e0 0%, #7c6ff0 100%);
-    --accent-grad-hover: linear-gradient(135deg, #6b72e8 0%, #8b7ef5 100%);
-    --accent-glow:  0 6px 20px -8px rgba(124, 131, 240, .5);
+    /* lime does the shouting, violet does the depth */
+    --accent:       #cbf24f;
+    --accent-hover: #d9f775;
+    --accent-soft:  rgba(203, 242, 79, .13);
+    --accent-ink:   #12160a;
+    --accent-grad:  linear-gradient(135deg, #cbf24f 0%, #a9e02f 100%);
+    --accent-grad-hover: linear-gradient(135deg, #d7f76e 0%, #b8ea45 100%);
+    --accent-glow:  0 6px 22px -8px rgba(203, 242, 79, .5);
+    --violet:       #8b5cf6;
+    --violet-soft:  rgba(139, 92, 246, .16);
+    --violet-grad:  linear-gradient(135deg, #7c4ef0 0%, #a855f7 100%);
 
-    --flow-in:       #4ea8dd;
-    --flow-in-soft:  rgba(78, 168, 221, .15);
-    --flow-out:      #e07a8c;
-    --flow-out-soft: rgba(224, 122, 140, .15);
+    --flow-in:       #5ec8e8;
+    --flow-in-soft:  rgba(94, 200, 232, .15);
+    --flow-out:      #f0798f;
+    --flow-out-soft: rgba(240, 121, 143, .15);
 
-    --seq-1: #c7cbf7; --seq-2: #aab0f2; --seq-3: #8f96ec;
-    --seq-4: #757ce4; --seq-5: #5d64d6; --seq-6: #474dad;
+    /* single-hue violet magnitude scale — lime stays reserved for
+       actions so it never gets mistaken for data */
+    --seq-1: #ddd3fe; --seq-2: #c3b1fc; --seq-3: #a78bfa;
+    --seq-4: #8b5cf6; --seq-5: #7239e8; --seq-6: #5a2cbb;
 
-    --good-text:    #4ec9a0;
+    --good-text:    #9ee84a;
     --date-icon-filter: invert(1);
 
     --glass-bg:   rgba(255, 255, 255, .04);
@@ -122,23 +134,26 @@
   --ring:         rgba(255,255,255,.14);
 
   /* restrained indigo — the gradient is a narrow sweep, not a rainbow */
-  --accent:       #7c83f0;
-  --accent-hover: #949af5;
-  --accent-soft:  rgba(124, 131, 240, .14);
-  --accent-ink:   #ffffff;
-  --accent-grad:  linear-gradient(135deg, #5d64e0 0%, #7c6ff0 100%);
-  --accent-grad-hover: linear-gradient(135deg, #6b72e8 0%, #8b7ef5 100%);
-  --accent-glow:  0 6px 20px -8px rgba(124, 131, 240, .5);
+  --accent:       #cbf24f;
+  --accent-hover: #d9f775;
+  --accent-soft:  rgba(203, 242, 79, .13);
+  --accent-ink:   #12160a;
+  --accent-grad:  linear-gradient(135deg, #cbf24f 0%, #a9e02f 100%);
+  --accent-grad-hover: linear-gradient(135deg, #d7f76e 0%, #b8ea45 100%);
+  --accent-glow:  0 6px 22px -8px rgba(203, 242, 79, .5);
+  --violet:       #8b5cf6;
+  --violet-soft:  rgba(139, 92, 246, .16);
+  --violet-grad:  linear-gradient(135deg, #7c4ef0 0%, #a855f7 100%);
 
-  --flow-in:       #4ea8dd;
-  --flow-in-soft:  rgba(78, 168, 221, .15);
-  --flow-out:      #e07a8c;
-  --flow-out-soft: rgba(224, 122, 140, .15);
+  --flow-in:       #5ec8e8;
+  --flow-in-soft:  rgba(94, 200, 232, .15);
+  --flow-out:      #f0798f;
+  --flow-out-soft: rgba(240, 121, 143, .15);
 
-  --seq-1: #c7cbf7; --seq-2: #aab0f2; --seq-3: #8f96ec;
-  --seq-4: #757ce4; --seq-5: #5d64d6; --seq-6: #474dad;
+  --seq-1: #ddd3fe; --seq-2: #c3b1fc; --seq-3: #a78bfa;
+  --seq-4: #8b5cf6; --seq-5: #7239e8; --seq-6: #5a2cbb;
 
-  --good-text:    #4ec9a0;
+  --good-text:    #9ee84a;
   --date-icon-filter: invert(1);
 
   --glass-bg:   rgba(255, 255, 255, .04);
@@ -277,7 +292,7 @@ svg { display: block; }
   -webkit-backdrop-filter: saturate(1.7) blur(16px);
 }
 .topbar-title h1 {
-  font-size: 21px; font-weight: 650; letter-spacing: -.024em;
+  font-size: 24px; font-weight: 720; letter-spacing: -.032em;
   animation: fadeUp .35s var(--ease);
 }
 .topbar-title { flex: 1; min-width: 0; }
@@ -382,13 +397,31 @@ svg { display: block; }
 body.is-reordering { cursor: grabbing; user-select: none; }
 body.is-reordering .card:hover { transform: none; box-shadow: var(--shadow-sm); }
 
-/* ── card physics: a touch more life on hover ──────────── */
+/* ── module hover: lift + accent edge on every card ─────── */
 .card { will-change: transform; }
-.tile, .proj-card { transform-style: preserve-3d; }
-.tile:hover, .proj-card:hover { box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* The sheen sweep needs overflow:hidden, so it is limited to the
+   compact module cards. Chart and table cards keep their overflow
+   intact — clipping them would cut off tooltips and scroll areas. */
+.tile, .proj-card { position: relative; overflow: hidden; }
+.tile::after, .proj-card::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: linear-gradient(115deg, transparent 32%, color-mix(in srgb, var(--accent) 10%, transparent) 48%, transparent 64%);
+  transform: translateX(-130%);
+}
+.tile:hover::after, .proj-card:hover::after { animation: cardSheen .8s var(--ease) forwards; }
+@keyframes cardSheen { to { transform: translateX(130%); } }
+.tile:hover, .proj-card:hover { box-shadow: var(--shadow-md), 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent); }
+
 html.no-motion .card,
-html.no-motion .tile:hover,
-html.no-motion .proj-card:hover { transform: none !important; }
+html.no-motion .card:hover { transform: none !important; }
+html.no-motion .tile::after, html.no-motion .proj-card::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .tile::after, .proj-card::after { display: none; } }
 
 /* KPI figures tick up rather than snapping to their new value */
 .tile-value, .hero-figure { font-variant-numeric: tabular-nums; }
@@ -548,7 +581,8 @@ html.no-motion .proj-card:hover { transform: none !important; }
 /* solid, not gradient — a headline financial figure should read as
    authoritative, and gradient text at this size looks like marketing */
 .hero-figure {
-  font-size: 54px; font-weight: 660; letter-spacing: -.036em; line-height: 1.04;
+  font-size: clamp(44px, 4.6vw, 62px); font-weight: 760;
+  letter-spacing: -.042em; line-height: 1.02;
   margin: 2px 0 6px; color: var(--ink);
 }
 .hero-figure.is-negative { color: var(--critical); }
@@ -600,13 +634,14 @@ html.no-motion .proj-card:hover { transform: none !important; }
   position: relative; overflow: hidden;
   background: linear-gradient(150deg, var(--surface) 0%, var(--surface) 55%, color-mix(in srgb, var(--accent) 7%, var(--surface)) 100%);
 }
-/* gradient hairline along the top edge, revealed on hover */
-.tile::after {
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+/* gradient hairline along the top edge, revealed on hover.
+   ::before because ::after carries the sheen sweep. */
+.tile::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; z-index: 3;
   background: var(--accent-grad);
   opacity: 0; transition: opacity .25s var(--ease);
 }
-.tile:hover::after { opacity: 1; }
+.tile:hover::before { opacity: 1; }
 .tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--line-strong); }
 .tile-label { font-size: 12px; color: var(--ink-muted); font-weight: 560; text-transform: uppercase; letter-spacing: .04em; }
 .tile-value { font-size: 28px; font-weight: 660; letter-spacing: -.03em; line-height: 1.15; font-variant-numeric: tabular-nums; }
@@ -929,6 +964,59 @@ td .empty { padding: 40px 20px; }
   font-size: 13px; color: var(--ink-2);
 }
 .payroll-total strong { font-size: 19px; font-weight: 640; color: var(--ink); letter-spacing: -.02em; }
+
+/* ═══════════════════════════════════════════════════════
+   Module-change interstitial
+   Wipes across on every view change. Deliberately short (~900ms
+   start to finish) and pointer-transparent the whole time, so it
+   never blocks a click you have already committed to.
+   ═══════════════════════════════════════════════════════ */
+.hype {
+  position: fixed; inset: 0; z-index: 120;
+  display: grid; place-items: center;
+  pointer-events: none;
+  opacity: 0; visibility: hidden;
+  background:
+    radial-gradient(80% 60% at 50% 50%, color-mix(in srgb, var(--violet) 22%, transparent) 0%, transparent 70%),
+    color-mix(in srgb, var(--page) 92%, black);
+  clip-path: inset(0 0 100% 0);
+}
+.hype.is-on {
+  visibility: visible; opacity: 1;
+  animation: hypeWipe .9s var(--ease) forwards;
+}
+@keyframes hypeWipe {
+  0%   { clip-path: inset(0 0 100% 0); opacity: 1; }
+  22%  { clip-path: inset(0 0 0 0);    opacity: 1; }
+  70%  { clip-path: inset(0 0 0 0);    opacity: 1; }
+  100% { clip-path: inset(100% 0 0 0); opacity: 1; }
+}
+.hype-inner { text-align: center; padding: 0 24px; }
+.hype-kicker {
+  display: block; margin-bottom: 14px;
+  font-size: 12px; font-weight: 680; letter-spacing: .34em; text-transform: uppercase;
+  color: var(--accent);
+}
+.hype-line {
+  display: block;
+  font-size: clamp(26px, 5.4vw, 64px);
+  font-weight: 800; line-height: 1.06; letter-spacing: -.035em;
+  color: var(--ink);
+}
+.hype-line em {
+  font-style: normal;
+  background: var(--accent-grad);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hype.is-on .hype-inner { animation: hypeRise .9s var(--ease) forwards; }
+@keyframes hypeRise {
+  0%   { opacity: 0; transform: translateY(24px) scale(.97); }
+  26%  { opacity: 1; transform: none; }
+  66%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-16px) scale(.99); }
+}
+html.no-motion .hype { display: none; }
+@media (prefers-reduced-motion: reduce) { .hype { display: none; } }
 
 /* ── toasts ────────────────────────────────────────────── */
 .toast-stack { position: fixed; bottom: 24px; right: 24px; z-index: 90; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }

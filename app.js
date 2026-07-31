@@ -2526,7 +2526,22 @@ const VIEW_META = {
   settings:     ['Settings',     'Company details, backups and data'],
 };
 
+/* ── module-change interstitial ─────────────────────────── */
+let hypeTimer = null, hypeBooted = false;
+/** Fires the full-screen hype wipe. Skipped on the very first paint
+ *  (you haven't navigated anywhere yet) and when motion is off. */
+function playHype() {
+  const el = $('#hype');
+  if (!el || !hypeBooted || !motionAllowed()) return;
+  el.classList.remove('is-on');
+  void el.offsetWidth;                 // restart the animation mid-flight
+  el.classList.add('is-on');
+  clearTimeout(hypeTimer);
+  hypeTimer = setTimeout(() => el.classList.remove('is-on'), 900);
+}
+
 function setView(name) {
+  if (name !== ui.view) playHype();
   ui.view = name;
   $$('.nav-item').forEach((b) => b.classList.toggle('is-active', b.dataset.view === name));
   $$('.view').forEach((v) => v.classList.toggle('is-active', v.dataset.view === name));
@@ -2765,21 +2780,45 @@ const easeOutExpo = (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x));
  *  to a plain write when motion is off or the value hasn't changed. */
 function animateCount(el, to, format) {
   if (!el) return;
+  el._countFmt = format;               // kept so hover can replay the same formatting
   const prev = Number(el.dataset.countVal);
   // first ever paint has no previous value — sweep up from zero, which
   // makes the dashboard land rather than just appear
   const from = Number.isFinite(prev) ? prev : 0;
   el.dataset.countVal = String(to);
-  if (!motionAllowed() || from === to) { el.textContent = format(to); return; }
+  if (!motionAllowed() || from === to) { el.textContent = format(to); el._countRaf = null; return; }
   if (el._countRaf) cancelAnimationFrame(el._countRaf);
   const start = performance.now(), dur = 620, span = to - from;
   const step = (now) => {
     const k = Math.min((now - start) / dur, 1);
     el.textContent = format(from + span * easeOutExpo(k));
+    // cleared on the last frame — replayCount() uses this to tell
+    // whether an animation is still in flight
     if (k < 1) el._countRaf = requestAnimationFrame(step);
+    else el._countRaf = null;
   };
   el._countRaf = requestAnimationFrame(step);
 }
+
+/** Replays a figure's count-up from zero. Used on hover so any number
+ *  on the page can be "re-read" on demand. Delegated, so it keeps
+ *  working across the full re-renders renderAll() does. */
+function replayCount(el) {
+  if (!el || !motionAllowed()) return;
+  const to = Number(el.dataset.countVal);
+  if (!Number.isFinite(to) || el._countRaf) return;   // don't stack replays
+  const fmt = el._countFmt;
+  if (!fmt) return;
+  el.dataset.countVal = '0';
+  animateCount(el, to, fmt);
+}
+document.addEventListener('pointerenter', (e) => {
+  const t = e.target;
+  if (!(t instanceof Element)) return;
+  const card = t.closest('.tile, .hero-card');
+  if (!card) return;
+  $$('[data-count-val]', card).forEach(replayCount);
+}, true);
 
 /* ── motivation, driven by the actual numbers ──────────── */
 function motivationFor(t, list) {
@@ -2980,3 +3019,4 @@ setView('overview');
 applyMotionPref();
 renderPeriodBar();
 refreshReorderables();
+hypeBooted = true;   // arm the interstitial only after the first paint
