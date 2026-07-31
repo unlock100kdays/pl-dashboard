@@ -532,8 +532,16 @@ function drawFlowChart() {
 }
 
 /* ── category ranking bars ─────────────────────────────── */
+/** "Where money goes" — gradient bar rows. Replaces the old SVG
+ *  ranking chart: same data and same top-6-plus-Other capping, but
+ *  rendered as HTML rows so labels, amounts and share percentages can
+ *  sit on a proper grid instead of being positioned by hand. */
+const SPEND_HUES = ['var(--flow-in)', 'var(--good-text)', 'var(--flow-out)', '#a78bfa', '#f0b429', '#2dd4bf'];
+const SPEND_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12 12 20a1.5 1.5 0 0 1-2.1 0l-6-6a1.5 1.5 0 0 1 0-2.1L11.9 4H19a1 1 0 0 1 1 1v7z"/><circle cx="14.5" cy="8.5" r="1.4"/></svg>';
+
 function drawCategoryChart() {
   const host = $('#catHost');
+  if (!host) return;
   const dir = ui.breakdownDir;
   const base = txInRange().filter((t) => !ui.breakdownProject || t.project === ui.breakdownProject);
   const list = base.filter((t) => t.type === dir);
@@ -559,84 +567,30 @@ function drawCategoryChart() {
   let rows = [...byCat.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 
   if (!rows.length) {
-    host.onpointermove = host.onpointerleave = null;
-    host.style.height = '';
-    host.innerHTML = emptyBlock('Nothing to break down', `No ${dir === 'expense' ? 'costs' : 'income'} recorded in this period.`);
+    host.innerHTML = emptyBlock('Nothing to break down', `No ${dir === 'expense' ? 'costs' : 'income'} recorded in this period.`, '', 'tag');
     $('#catTable').innerHTML = '';
     return;
   }
-
-  // cap at 6 slots; the tail folds into "Other" rather than growing the palette
-  if (rows.length > 7) {
-    const head = rows.slice(0, 6);
-    const other = sum(rows.slice(6), (r) => r.value);
-    rows = [...head, { name: 'Other', value: other, isOther: true }];
+  if (rows.length > 6) {
+    const head = rows.slice(0, 5);
+    rows = [...head, { name: 'Other expenses', value: sum(rows.slice(5), (r) => r.value), isOther: true }];
   }
 
-  // size the host to the row count so bars never spill past the card
-  const H = clamp(rows.length * 38, 180, 420);
-  host.style.height = `${H}px`;
-  host.innerHTML = `<svg id="catChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg><div class="tooltip" id="catTip" role="status" aria-live="polite"></div>`;
-  const svg = $('#catChart', host);
-  const tip = $('#catTip', host);
-
-  const W = host.clientWidth || 500;
-  const labelW = clamp(Math.round(W * 0.32), 90, 168);
-  const pad = { t: 4, r: 62, b: 4, l: labelW };
-  const iw = Math.max(30, W - pad.l - pad.r);
-  const ih = H - pad.t - pad.b;
   const max = Math.max(...rows.map((r) => r.value), 1);
-
-  const band = ih / rows.length;
-  const barH = clamp(band - 12, 6, 24);
-  const ramp = ['--seq-1', '--seq-2', '--seq-3', '--seq-4', '--seq-5', '--seq-6'];
   const total = sum(rows, (r) => r.value);
 
-  let g = '<defs>';
-  const fills = rows.map((r, i) => {
-    const base = r.isOther ? 'var(--line-strong)' : `var(${ramp[Math.min(i, ramp.length - 1)]})`;
-    const grad = barGradientDef(base);
-    g += grad.html;
-    return `url(#${grad.id})`;
-  });
-  g += '</defs>';
-  rows.forEach((r, i) => {
-    const y = pad.t + band * i + (band - barH) / 2;
-    const w = (r.value / max) * iw;
-    const name = r.name.length > 22 ? r.name.slice(0, 21) + '…' : r.name;
-    g += `<text class="cat-name" x="${pad.l - 12}" y="${(y + barH / 2 + 4).toFixed(1)}" text-anchor="end">${esc(name)}</text>`;
-    g += `<rect class="hover-band" data-i="${i}" x="0" y="${(pad.t + band * i).toFixed(1)}" width="${W}" height="${band.toFixed(1)}" rx="6"/>`;
-    g += `<path class="bar bar-h" data-i="${i}" style="animation-delay:${i * 45}ms" d="${rowPath(pad.l, y, w, barH)}" fill="${fills[i]}"/>`;
-    // direct label at the tip — the relief for light hues that sit under 3:1
-    g += `<text class="bar-label" x="${(pad.l + w + 9).toFixed(1)}" y="${(y + barH / 2 + 4).toFixed(1)}">${fmtMoney(r.value, { compact: true })}</text>`;
-  });
-
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.innerHTML = g;
-
-  const bars = $$('.bar', svg);
-  const bands = $$('.hover-band', svg);
-  host.onpointermove = (ev) => {
-    const rect = host.getBoundingClientRect();
-    const i = clamp(Math.floor(((ev.clientY - rect.top) - pad.t) / band), 0, rows.length - 1);
-    const r = rows[i];
-    bands.forEach((b, j) => b.classList.toggle('is-on', j === i));
-    bars.forEach((b) => b.classList.toggle('is-hot', +b.dataset.i === i));
-    host.classList.add('is-hovering');
-    const share = total ? (r.value / total) * 100 : 0;
-    tip.innerHTML = `<h4>${esc(r.name)}</h4>` +
-      `<div class="tooltip-row"><span>Total</span><b>${fmtMoney(r.value)}</b></div>` +
-      `<div class="tooltip-row"><span>Share</span><b>${share.toFixed(1)}%</b></div>`;
-    tip.classList.add('is-on');
-    const tw = tip.offsetWidth, th = tip.offsetHeight;
-    tip.style.left = `${clamp(ev.clientX - rect.left + 14, 4, W - tw - 4)}px`;
-    tip.style.top = `${clamp(pad.t + band * i + band / 2 - th / 2, 4, H - th - 4)}px`;
-  };
-  host.onpointerleave = () => {
-    bands.forEach((b) => b.classList.remove('is-on'));
-    host.classList.remove('is-hovering');
-    tip.classList.remove('is-on');
-  };
+  host.innerHTML = rows.map((r, i) => {
+    const hue = r.isOther ? 'var(--ink-muted)' : SPEND_HUES[i % SPEND_HUES.length];
+    const w = Math.max((r.value / max) * 100, 2);
+    const pct = total ? (r.value / total) * 100 : 0;
+    return `<div class="spend-row" style="--bar-hue:${hue}" title="${esc(r.name)} — ${fmtMoney(r.value)} (${pct.toFixed(1)}%)">
+      <span class="spend-chip">${SPEND_ICON}</span>
+      <span class="spend-name">${esc(r.name)}</span>
+      <span class="spend-track"><span class="spend-fill" style="width:${w.toFixed(1)}%;animation-delay:${i * 70}ms"></span></span>
+      <span class="spend-amt">${fmtMoney(r.value, { compact: true })}</span>
+      <span class="spend-pct">${pct.toFixed(0)}%</span>
+    </div>`;
+  }).join('');
 
   $('#catTable').innerHTML =
     `<thead><tr><th>Category</th><th class="num">Total</th><th class="num">Share</th></tr></thead><tbody>` +
@@ -682,6 +636,31 @@ const EMPTY_ICONS = {
   cards:   '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>',
   tag:     '<path d="M20 12 12 20a1.5 1.5 0 0 1-2.1 0l-6-6a1.5 1.5 0 0 1 0-2.1L11.9 4H19a1 1 0 0 1 1 1v7z"/><circle cx="14.5" cy="8.5" r="1.5"/>',
 };
+
+/** Small smoothed line + fade for the KPI tiles. `key` picks which
+ *  series the tile is showing; colour comes from the tile's own hue. */
+function drawTileSpark(svgId, values, color) {
+  const svg = $(svgId);
+  if (!svg) return;
+  const W = 120, H = 44;
+  const vals = values.length >= 2 ? values : [0, 0];
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = (hi - lo) || 1;
+  const x = (i) => (i / (vals.length - 1)) * (W - 4) + 2;
+  const y = (v) => H - 5 - ((v - lo) / span) * (H - 12);
+  const pts = vals.map((v, i) => [x(i), y(v)]);
+  const line = smoothPath(pts);
+  const area = `${line}L${W - 2},${H}L2,${H}Z`;
+  const gid = `tsp${++gradientUid}`;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML =
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0%" stop-color="${color}" stop-opacity=".38"/>` +
+    `<stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>` +
+    `<path d="${area}" fill="url(#${gid})"/>` +
+    `<path d="${line}" fill="none" stroke="${color}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>` +
+    `<circle cx="${x(vals.length - 1).toFixed(1)}" cy="${y(vals[vals.length - 1]).toFixed(1)}" r="2.6" fill="${color}"/>`;
+}
 
 function emptyBlock(title, text, action = '', icon = 'generic') {
   const paths = EMPTY_ICONS[icon] || EMPTY_ICONS.generic;
@@ -948,6 +927,17 @@ function renderOverview() {
   const payrollMonthly = sum(roster, monthlyCost);
   animateCount($('#tilePayroll'), payrollMonthly, (v) => fmtMoney(v, { compact: true }));
   $('#tilePayrollSub').textContent = `${roster.length} ${roster.length === 1 ? 'person' : 'people'} · per month`;
+
+  // per-tile mini trends, from the same monthly buckets the hero uses
+  const series = monthlySeries(list);
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  drawTileSpark('#sparkIn', series.map((d) => d.income), css('--good-text'));
+  drawTileSpark('#sparkOut', series.map((d) => d.expense), css('--flow-out'));
+  drawTileSpark('#sparkMargin', series.map((d) => (d.income ? (d.income - d.expense) / d.income : 0)), css('--flow-in'));
+  // real salary spend per month, not a scaled stand-in — a sparkline
+  // that isn't the actual series is just a decorative lie
+  const paySeries = monthlySeries(list.filter((t) => t.employee));
+  drawTileSpark('#sparkPayroll', paySeries.map((d) => d.expense), '#a78bfa');
 
   drawSparkline();
   drawFlowChart();

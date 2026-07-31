@@ -68,6 +68,14 @@
         <div class="runway-bar" aria-hidden="true"><i id="sideBar" style="width:50%"></i></div>
         <span class="runway-sub" id="sideSub">No data yet</span>
       </div>
+      <button class="account-card" id="accountCard" data-goto="settings" title="Company settings">
+        <span class="account-avatar" id="accountAvatar">N</span>
+        <span class="account-meta">
+          <strong id="accountName">My Company</strong>
+          <em>Business Account</em>
+        </span>
+        <svg class="account-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <button class="ghost-btn theme-toggle" id="themeToggle" aria-label="Switch colour theme">
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M22 12h-2M4 12H2M19 5l-1.5 1.5M6.5 17.5 5 19M19 19l-1.5-1.5M6.5 6.5 5 5"/></svg>
         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>
@@ -88,6 +96,15 @@
         <p id="viewSub">Every dollar in and out, at a glance</p>
       </div>
       <div class="topbar-actions">
+        <label class="global-search" id="globalSearchWrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input type="search" id="globalSearch" placeholder="Search anything..." aria-label="Search across the dashboard" autocomplete="off">
+          <kbd class="kbd">⌘K</kbd>
+        </label>
+        <button class="icon-btn notif-btn" id="notifBtn" title="Notifications" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10.5 20a1.8 1.8 0 0 0 3 0"/></svg>
+          <span class="notif-badge" id="notifBadge" hidden>0</span>
+        </button>
         <button class="icon-btn sync-indicator sync-indicator--off" id="sheetsIndicator" data-goto="settings" title="Google Sheets — not connected" aria-label="Google Sheets sync status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A5.5 5.5 0 0 1 17 8.5a4 4 0 0 1-1 7.5H7z"/></svg>
         </button>
@@ -147,35 +164,53 @@
               <span class="delta" id="heroDelta"><span class="delta-icon" aria-hidden="true"></span><span class="delta-text">—</span></span>
               <span class="hero-meta-sub" id="heroDeltaSub">vs previous period</span>
             </p>
+            <div class="hero-spark">
+              <svg id="heroSpark" viewBox="0 0 320 120" preserveAspectRatio="none" role="img" aria-label="Net profit trend over the period"></svg>
+            </div>
             <p class="hero-motivation" id="heroMotivation">
-              <span class="motivation-spark" aria-hidden="true"></span>
+              <span class="motivation-spark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3.5 2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.9l6.1-.8z"/></svg>
+              </span>
               <span class="motivation-text">Every dollar counts. Keep building.</span>
             </p>
-            <div class="hero-spark">
-              <svg id="heroSpark" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Net profit trend over the period"></svg>
-            </div>
           </article>
 
           <div class="tiles">
-            <article class="card tile">
-              <span class="tile-label">Money in</span>
+            <article class="card tile tile--in">
+              <div class="tile-head">
+                <span class="tile-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M12 19l5-5M12 19l-5-5"/></svg></span>
+                <span class="tile-label">Money In</span>
+              </div>
               <strong class="tile-value" id="tileIn">$0</strong>
               <span class="tile-foot"><i class="dot dot-in" aria-hidden="true"></i><span id="tileInSub">0 entries</span></span>
+              <svg class="tile-spark" id="sparkIn" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true"></svg>
             </article>
-            <article class="card tile">
-              <span class="tile-label">Money out</span>
+            <article class="card tile tile--out">
+              <div class="tile-head">
+                <span class="tile-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M12 5l5 5M12 5L7 10"/></svg></span>
+                <span class="tile-label">Money Out</span>
+              </div>
               <strong class="tile-value" id="tileOut">$0</strong>
               <span class="tile-foot"><i class="dot dot-out" aria-hidden="true"></i><span id="tileOutSub">0 entries</span></span>
+              <svg class="tile-spark" id="sparkOut" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true"></svg>
             </article>
-            <article class="card tile">
-              <span class="tile-label">Profit margin</span>
+            <article class="card tile tile--margin">
+              <div class="tile-head">
+                <span class="tile-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></span>
+                <span class="tile-label">Profit Margin</span>
+              </div>
               <strong class="tile-value" id="tileMargin">—</strong>
-              <span class="tile-foot"><span id="tileMarginSub">of money in</span></span>
+              <span class="tile-foot"><i class="dot dot-margin" aria-hidden="true"></i><span id="tileMarginSub">of money in</span></span>
+              <svg class="tile-spark" id="sparkMargin" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true"></svg>
             </article>
-            <article class="card tile">
-              <span class="tile-label">Payroll cost</span>
+            <article class="card tile tile--payroll">
+              <div class="tile-head">
+                <span class="tile-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6"/><path d="M17.5 19a5.6 5.6 0 0 0-2-4"/></svg></span>
+                <span class="tile-label">Payroll Cost</span>
+              </div>
               <strong class="tile-value" id="tilePayroll">$0</strong>
-              <span class="tile-foot"><span id="tilePayrollSub">0 people on roster</span></span>
+              <span class="tile-foot"><i class="dot dot-payroll" aria-hidden="true"></i><span id="tilePayrollSub">0 people on roster</span></span>
+              <svg class="tile-spark" id="sparkPayroll" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true"></svg>
             </article>
           </div>
         </div>
@@ -209,10 +244,7 @@
               </div>
             </div>
             <div class="proj-stats" id="breakdownStats" style="display:none"></div>
-            <div class="chart-host chart-host--bars" id="catHost">
-              <svg id="catChart" role="img" aria-label="Horizontal bars ranking categories by total amount"></svg>
-              <div class="tooltip" id="catTip" role="status" aria-live="polite"></div>
-            </div>
+            <div class="spend-list" id="catHost"></div>
             <details class="table-view">
               <summary>View as table</summary>
               <div class="table-scroll"><table id="catTable"></table></div>
@@ -252,6 +284,11 @@
             </div>
             <ul class="feed" id="recentFeed"></ul>
           </article>
+        </div>
+
+        <div class="card pulse-bar">
+          <svg class="pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4l3-8 5 16 3-8h5"/></svg>
+          <span>Cash flow is the pulse. Profit is the result.</span>
         </div>
       </section>
 
