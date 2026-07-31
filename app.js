@@ -760,12 +760,20 @@ function enhanceSelect(select) {
   const openPanel = () => {
     if (select.disabled) return;
     buildOptions();
-    // Portal to <body> before measuring. position:fixed resolves against
-    // the nearest ancestor with a transform / filter / will-change /
-    // backdrop-filter, not the viewport — and cards carry a hover
-    // transform, so a panel left inside one gets anchored to the card
-    // instead. Re-parenting to body removes every such ancestor.
-    if (panel.parentElement !== document.body) document.body.appendChild(panel);
+    // Where the panel gets portalled matters twice over:
+    //  * position:fixed resolves against the nearest ancestor carrying a
+    //    transform / filter / will-change, not the viewport — and cards
+    //    have a hover transform, so a panel left inside one anchors to
+    //    the card.
+    //  * showModal() puts a <dialog> in the top layer, which paints above
+    //    the whole normal stacking context. A panel parked on <body>
+    //    while a modal is open is therefore invisible behind it, and no
+    //    z-index can lift it out.
+    // So: into the open dialog when there is one (same top layer, and
+    // .modal[open] is transform:none so it makes no containing block),
+    // otherwise onto <body>.
+    const portalHost = select.closest('dialog[open]') || document.body;
+    if (panel.parentElement !== portalHost) portalHost.appendChild(panel);
     const r = trigger.getBoundingClientRect(); // wrap is display:contents — has no box of its own
     const spaceBelow = window.innerHeight - r.bottom;
     const spaceAbove = r.top;
