@@ -92,7 +92,10 @@ function save() {
   } catch (err) {
     toast('Could not save — browser storage is full', 'bad');
   }
-  pushStateToServer();   // the server copy is the shared source of truth
+  // Both mirrors hang off this one call site, because every CRUD path in
+  // the app funnels through save() — so neither can be missed.
+  pushStateToServer();    // KV: the shared source of truth across devices
+  scheduleSheetsSync();   // Google Sheets: the backup / reporting mirror
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -185,9 +188,6 @@ function handleConflict(d) {
     setCloudStatus('synced', `Reloaded the newer shared copy (v${stateVersion})`);
   }
   toast('This dashboard changed on another device — reloaded the latest version', 'warn');
-  // single call site — every CRUD path in the app already funnels through
-  // save(), so this is the one place Sheets sync can't be missed
-  scheduleSheetsSync();
 }
 
 /* ── money & dates ─────────────────────────────────────── */
