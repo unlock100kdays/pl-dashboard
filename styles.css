@@ -922,10 +922,8 @@ html.no-motion .spend-fill { animation: none; }
   font-size: 12.5px; font-weight: 540; color: var(--ink-2);
   letter-spacing: -.005em;
 }
-.motivation-spark {
-  width: 6px; height: 6px; border-radius: 50%; flex: none;
-  background: var(--accent-grad);
-}
+/* the icon chip is defined once, above — the old 6px dot rule that
+   used to live here was overriding it and collapsing the chip */
 .motivation-text { transition: opacity .4s var(--ease); }
 .motivation-text.is-swapping { opacity: 0; }
 
@@ -1334,6 +1332,96 @@ td .empty { padding: 40px 20px; }
   .table-scroll { margin: 0 -18px; padding: 0 18px; max-height: 360px; }
   .modal-foot { flex-wrap: wrap; }
   .view.is-active > * { animation-delay: 0ms !important; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Mobile
+   The topbar was the root problem: a flex row that could not wrap,
+   holding a 260px-min search field plus five other controls, which
+   forced the whole document to ~682px on a 390px screen and pushed
+   every section sideways. Below it wraps, the search collapses, and
+   the grids drop to one column.
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  /* search is the widest thing up there and the least useful on a
+     phone — the nav is two taps away */
+  .global-search { display: none; }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-wrap: wrap; gap: 10px 8px;
+    padding: 12px 16px;
+    align-items: center;
+  }
+  .topbar-title { flex: 1 1 100%; order: 1; min-width: 0; }
+  .topbar-title h1 { font-size: 20px; }
+  .topbar-actions {
+    order: 2; flex: 1 1 100%;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .only-mobile { order: 0; }
+  .period-bar { height: 36px; }
+  .period-current { min-width: 88px; font-size: 12.5px; }
+  .cloud-status, .notif-btn, .sync-indicator { height: 36px; }
+  .cloud-status { padding: 0 10px; }
+  /* New Entry last and pushed right so it always reads as the CTA */
+  .topbar-actions .primary-btn { margin-left: auto; height: 36px; }
+
+  .content { padding: 16px 14px 44px; }
+  .view { gap: 16px; }
+  .card { padding: 18px 16px; border-radius: 18px; }
+  .card-head { margin-bottom: 14px; }
+  .grid-2, .grid-2--wide-left, .hero-grid { grid-template-columns: 1fr; gap: 16px; }
+  .tiles, .tiles--4 { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+
+  .hero-figure { font-size: clamp(34px, 10vw, 46px); }
+  .hero-spark svg { height: 104px; }
+  .tile { padding: 16px 14px; }
+  .tile-value { font-size: 23px; }
+  .tile-spark { width: 74px; height: 30px; right: 12px; bottom: 12px; opacity: .75; }
+
+  /* every table gets its own horizontal scroll instead of widening
+     the page; -webkit-overflow-scrolling keeps it momentum-scrolled */
+  .table-scroll { -webkit-overflow-scrolling: touch; max-height: none; }
+  .data-table { min-width: 520px; }
+
+  .spend-row { grid-template-columns: 26px minmax(72px, 1fr) 1.2fr auto; gap: 9px; padding: 8px 4px; }
+  .spend-chip { width: 26px; height: 26px; }
+  .spend-pct { display: none; }           /* amount already carries the weight */
+  .spend-track { height: 22px; }
+
+  /* comfortable thumb targets everywhere */
+  .icon-btn, .notif-btn { min-width: 40px; min-height: 40px; }
+  .csel-trigger { min-height: 40px; }
+  .seg-btn { min-height: 34px; padding: 6px 13px; }
+  .ghost-btn, .primary-btn { min-height: 38px; }
+  .row-actions { opacity: 1; }   /* no hover to reveal them on touch */
+  .row-actions .icon-btn { width: 34px; height: 34px; }
+}
+
+@media (max-width: 560px) {
+  .tiles, .tiles--4 { grid-template-columns: 1fr; }
+  .tile-spark { width: 96px; height: 36px; opacity: .85; }
+  .pulse-bar { font-size: 12.5px; text-align: center; }
+  .section-head { gap: 10px; }
+  .filter-bar { gap: 8px; }
+  .modal { width: calc(100vw - 20px); }
+  .modal-body { padding: 16px; }
+  .modal-head, .modal-foot { padding: 14px 16px; }
+  .gate-card { padding: 30px 20px 22px; }
+}
+
+/* Drag-to-rearrange is a pointer interaction: it needs hover to even
+   reveal the grip, and a press-drag fights the page scroll on touch.
+   Hidden where there is no hover, rather than left as clutter. */
+@media (hover: none) {
+  .drag-handle { display: none; }
+}
+
+/* landscape phones: keep the hero from eating the whole screen */
+@media (max-width: 900px) and (orientation: landscape) {
+  .hero-spark svg { height: 76px; }
 }
 
 @media print {
