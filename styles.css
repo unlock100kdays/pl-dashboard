@@ -669,6 +669,47 @@ html.no-motion .tile::after, html.no-motion .proj-card::after { display: none; }
 .cloud-status--offline  { color: var(--ink-muted); }
 @media (max-width: 1180px) { .cloud-status .cloud-label { display: none; } .cloud-status { padding: 0 10px; } }
 
+/* ── read-only mode ────────────────────────────────────── */
+.role-badge {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 12px;
+  border-radius: 12px; font-size: 12px; font-weight: 650;
+  letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
+}
+.role-badge[hidden] { display: none; }
+
+/* Every control that mutates data is removed for viewers. This is
+   convenience, not the security boundary — /api/state refuses a
+   viewer's writes with 403 regardless of what the UI shows. */
+body.is-readonly #addTxBtn,
+body.is-readonly #addProjBtn,
+body.is-readonly #addEmpBtn,
+body.is-readonly #addSubBtn,
+body.is-readonly #addCatBtn,
+body.is-readonly #addMethodBtn,
+body.is-readonly #runPayrollBtn,
+body.is-readonly #projDetailEdit,
+body.is-readonly #empDetailEdit,
+body.is-readonly #loadDemo,
+body.is-readonly #wipeData,
+body.is-readonly #importJson,
+body.is-readonly #sheetsSyncNowBtn,
+body.is-readonly .row-actions,
+body.is-readonly .drag-handle,
+body.is-readonly [data-pedit],
+body.is-readonly .empty .primary-btn { display: none !important; }
+
+/* settings fields stay visible for reference but cannot be changed */
+body.is-readonly #setCompany,
+body.is-readonly #setCurrency,
+body.is-readonly #sheetsAutoSync,
+body.is-readonly #setMotion { pointer-events: none; opacity: .55; }
+
+/* project and employee rows stop pretending to be actionable */
+body.is-readonly .proj-card { cursor: default; }
+
 .notif-btn { position: relative; width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface-sunk); }
 .notif-badge {
   position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px;

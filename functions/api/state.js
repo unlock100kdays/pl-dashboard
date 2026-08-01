@@ -22,35 +22,53 @@ const json = (body, status = 200) =>
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 
-/** Opt-in gate. Dormant until a DASHBOARD_PIN environment variable is
- *  set on the Pages project; once it is, every request must carry a
- *  matching X-Dashboard-Pin header and the PIN stops being something a
- *  visitor can read out of the client bundle. Returns null when the
- *  request is allowed through. */
-function denied(request, env) {
-  const expected = env.DASHBOARD_PIN;
-  if (!expected) return null;                       // not configured — open, as before
-  const given = request.headers.get('X-Dashboard-Pin') || '';
-  if (given === expected) return null;
-  return json({ ok: false, error: 'Unauthorised' }, 401);
+const ACCESS_KEY = 'access-config';
+
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Resolves the caller's role from the PIN they sent.
+ *  Returns 'edit', 'view', or null when the PIN matches neither.
+ *  If no access config has been stored the dashboard is open and
+ *  everyone is treated as an editor, matching the old behaviour. */
+async function roleFor(request, env) {
+  const raw = await env.DASHBOARD_KV.get(ACCESS_KEY);
+  if (!raw) return 'edit';
+  let cfg; try { cfg = JSON.parse(raw); } catch { return 'edit'; }
+  if (!cfg.editHash && !cfg.viewHash) return 'edit';
+
+  const pin = request.headers.get('X-Dashboard-Pin') || '';
+  if (!pin) return null;
+  const h = await sha256Hex(pin);
+  if (cfg.editHash && h === cfg.editHash) return 'edit';
+  if (cfg.viewHash && h === cfg.viewHash) return 'view';
+  return null;
 }
 
 export async function onRequestGet({ request, env }) {
-  const block = denied(request, env); if (block) return block;
   if (!env.DASHBOARD_KV) return json({ ok: false, error: 'DASHBOARD_KV binding missing' }, 500);
+  const role = await roleFor(request, env);
+  if (!role) return json({ ok: false, error: 'Unauthorised' }, 401);
   const raw = await env.DASHBOARD_KV.get(KEY);
-  if (!raw) return json({ ok: true, version: 0, state: null });
+  if (!raw) return json({ ok: true, role, version: 0, state: null });
   try {
     const rec = JSON.parse(raw);
-    return json({ ok: true, version: rec.version || 0, updatedAt: rec.updatedAt || null, state: rec.state ?? null });
+    return json({ ok: true, role, version: rec.version || 0, updatedAt: rec.updatedAt || null, state: rec.state ?? null });
   } catch {
     return json({ ok: false, error: 'Stored state is not valid JSON' }, 500);
   }
 }
 
 export async function onRequestPut({ request, env }) {
-  const block = denied(request, env); if (block) return block;
   if (!env.DASHBOARD_KV) return json({ ok: false, error: 'DASHBOARD_KV binding missing' }, 500);
+  const role = await roleFor(request, env);
+  if (!role) return json({ ok: false, error: 'Unauthorised' }, 401);
+  // The real enforcement point. Hiding buttons in the UI only stops
+  // honest mistakes — a viewer can still call this endpoint directly,
+  // so the write has to be refused here.
+  if (role !== 'edit') return json({ ok: false, error: 'Read-only access — this PIN cannot make changes.' }, 403);
 
   let body;
   try { body = await request.json(); }

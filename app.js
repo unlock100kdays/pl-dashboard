@@ -87,6 +87,9 @@ function load() {
 }
 
 function save() {
+  // Viewers never write. The API refuses them anyway (403), but
+  // stopping here avoids a pointless round-trip and a confusing toast.
+  if (userRole === 'view') { toast('View-only access — changes are not saved', 'warn'); return; }
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));   // offline cache only
   } catch (err) {
@@ -3114,15 +3117,47 @@ async function boot() {
    discoverable from the client. Cloudflare Access remains the stronger
    option because it also covers the endpoints and is per-person.
    ═══════════════════════════════════════════════════════ */
-const GATE_PIN = '8127';
 const GATE_KEY = 'pl-dashboard:unlocked';
+const ROLE_KEY = 'pl-dashboard:role';
+
+/** Asks the server which role a PIN carries. The server holds the
+ *  hashes, so no PIN is embedded in this bundle and the answer cannot
+ *  be faked by editing client code — a forged 'edit' role still gets
+ *  its writes refused by the API. */
+async function verifyPin(pin) {
+  try {
+    const r = await fetch(STATE_ENDPOINT, { cache: 'no-store', headers: { 'X-Dashboard-Pin': pin } });
+    if (r.status === 401) return null;
+    const d = await r.json();
+    return d.ok ? (d.role || 'edit') : null;
+  } catch {
+    return null;   // offline: cannot verify, so cannot let anyone in
+  }
+}
+
+/** Read-only mode. The API is the real gate; this just stops viewers
+ *  being shown controls that would fail. */
+function applyRole(role) {
+  userRole = role;
+  document.body.classList.toggle('is-readonly', role === 'view');
+  const badge = $('#roleBadge');
+  if (badge) {
+    badge.hidden = role !== 'view';
+    badge.textContent = 'View only';
+  }
+}
 
 function initGate(onUnlock) {
   const gate = $('#gate');
   if (!gate) { onUnlock(); return; }
 
   // stay unlocked for the tab session, so a refresh isn't a re-login
-  if (sessionStorage.getItem(GATE_KEY) === '1') { onUnlock(); return; }
+  if (sessionStorage.getItem(GATE_KEY)) {
+    apiPin = sessionStorage.getItem(GATE_KEY);
+    applyRole(sessionStorage.getItem(ROLE_KEY) || 'view');
+    onUnlock();
+    return;
+  }
 
   gate.hidden = false;
   document.body.classList.add('is-locked');
@@ -3157,21 +3192,29 @@ function initGate(onUnlock) {
     });
   });
 
-  $('#gateForm').addEventListener('submit', (e) => {
+  $('#gateForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const pin = entered();
     if (pin.length < boxes.length) { err.textContent = 'Enter all four digits.'; return; }
-    if (pin !== GATE_PIN) {
+
+    const btn = $('#gateBtn');
+    btn.disabled = true; err.textContent = '';
+    const role = await verifyPin(pin);
+    btn.disabled = false;
+
+    if (!role) {
       gate.classList.add('is-wrong');
-      err.textContent = 'Incorrect PIN. Try again.';
+      err.textContent = navigator.onLine ? 'Incorrect PIN. Try again.' : 'No connection — cannot verify PIN.';
       setTimeout(() => {
         boxes.forEach((b) => { b.value = ''; b.classList.remove('is-filled'); });
         boxes[0].focus();
       }, 420);
       return;
     }
-    sessionStorage.setItem(GATE_KEY, '1');
-    apiPin = pin;                       // sent on API calls so server-side checking can be switched on
+    sessionStorage.setItem(GATE_KEY, pin);
+    sessionStorage.setItem(ROLE_KEY, role);
+    apiPin = pin;
+    applyRole(role);
     gate.classList.add('is-open');
     document.body.classList.remove('is-locked');
     $('.app')?.classList.add('is-revealing');
@@ -3182,9 +3225,8 @@ function initGate(onUnlock) {
   setTimeout(() => boxes[0].focus(), 380);
 }
 
-/** Sent as X-Dashboard-Pin. Ignored by the API until DASHBOARD_PIN is
- *  configured on the Pages project, at which point it becomes required. */
-let apiPin = sessionStorage.getItem(GATE_KEY) === '1' ? GATE_PIN : '';
+let apiPin = '';          // sent as X-Dashboard-Pin on every API call
+let userRole = 'view';    // 'edit' | 'view' — authoritative copy lives server-side
 
 initGate(boot);
 
