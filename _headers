@@ -1,0 +1,27 @@
+# Cloudflare Pages header rules.
+#
+# app.js and styles.css ship unversioned (no build step, so no content
+# hash in the filename). Pages' default of max-age=14400 meant a browser
+# could keep running a four-hour-old bundle after a deploy — which is
+# exactly how a PIN change appeared "broken" while the deployed file was
+# already correct.
+#
+# no-cache does NOT mean "don't store": the browser still caches and
+# still gets a cheap 304 when nothing changed. It just has to revalidate
+# first, so a deploy takes effect on the very next load.
+
+/app.js
+  Cache-Control: no-cache
+
+/styles.css
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+# API responses must never be cached — they carry per-role data
+/api/*
+  Cache-Control: no-store

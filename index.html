@@ -626,6 +626,24 @@
           <ul class="cat-list" id="methodList"></ul>
         </article>
 
+        <article class="card" id="accessCardWrap">
+          <div class="card-head">
+            <div><h2>Access PINs</h2><p class="card-sub">Editors can change anything · viewers can only read</p></div>
+          </div>
+          <div class="form-grid">
+            <label class="field"><span>Editor PIN</span>
+              <input type="text" id="pinEdit" inputmode="numeric" maxlength="4" placeholder="4 digits" autocomplete="off">
+            </label>
+            <label class="field"><span>Viewer PIN (read-only)</span>
+              <input type="text" id="pinView" inputmode="numeric" maxlength="4" placeholder="4 digits" autocomplete="off">
+            </label>
+          </div>
+          <div class="btn-row" style="margin-top:14px">
+            <button class="primary-btn sm" id="pinSaveBtn">Update PINs</button>
+          </div>
+          <p class="hint" id="pinHint">Leave a field blank to keep that PIN unchanged. Only the hash is stored, so PINs can be changed but never read back.</p>
+        </article>
+
         <article class="card">
           <div class="card-head">
             <div><h2>Google Sheets</h2><p class="card-sub">Live backup &amp; reporting mirror — the dashboard stays the source of truth</p></div>

@@ -3151,12 +3151,24 @@ function initGate(onUnlock) {
   const gate = $('#gate');
   if (!gate) { onUnlock(); return; }
 
-  // stay unlocked for the tab session, so a refresh isn't a re-login
-  if (sessionStorage.getItem(GATE_KEY)) {
-    apiPin = sessionStorage.getItem(GATE_KEY);
-    applyRole(sessionStorage.getItem(ROLE_KEY) || 'view');
-    onUnlock();
-    return;
+  // Stay unlocked for the tab session so a refresh isn't a re-login —
+  // but re-verify with the server rather than trusting sessionStorage.
+  // An older build stored the flag "1" here instead of the PIN, and a
+  // PIN can be changed from another device mid-session.
+  const saved = sessionStorage.getItem(GATE_KEY);
+  if (saved && /^\d{4}$/.test(saved)) {
+    verifyPin(saved).then((role) => {
+      if (!role) { sessionStorage.removeItem(GATE_KEY); sessionStorage.removeItem(ROLE_KEY); return; }
+      apiPin = saved;
+      applyRole(role);
+      sessionStorage.setItem(ROLE_KEY, role);
+      gate.hidden = true;
+      document.body.classList.remove('is-locked');
+      onUnlock();
+    });
+  } else {
+    sessionStorage.removeItem(GATE_KEY);
+    sessionStorage.removeItem(ROLE_KEY);
   }
 
   gate.hidden = false;
@@ -3227,6 +3239,46 @@ function initGate(onUnlock) {
 
 let apiPin = '';          // sent as X-Dashboard-Pin on every API call
 let userRole = 'view';    // 'edit' | 'view' — authoritative copy lives server-side
+
+/* ── change PINs from Settings (editors only) ──────────── */
+$('#pinSaveBtn')?.addEventListener('click', async () => {
+  const hint = $('#pinHint');
+  const editPin = $('#pinEdit').value.trim();
+  const viewPin = $('#pinView').value.trim();
+  const bad = (v) => v && !/^\d{4}$/.test(v);
+  if (bad(editPin) || bad(viewPin)) { hint.textContent = 'PINs must be exactly 4 digits.'; return; }
+  if (!editPin && !viewPin) { hint.textContent = 'Enter a new PIN in at least one field.'; return; }
+  if (editPin && viewPin && editPin === viewPin) { hint.textContent = 'The two PINs must be different.'; return; }
+
+  const payload = {};
+  if (editPin) payload.editPin = editPin;
+  if (viewPin) payload.viewPin = viewPin;
+
+  $('#pinSaveBtn').disabled = true;
+  try {
+    const r = await fetch('/api/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...pinHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    // if this session's own PIN just changed, keep it usable
+    if (editPin && userRole === 'edit') {
+      apiPin = editPin;
+      sessionStorage.setItem(GATE_KEY, editPin);
+    }
+    $('#pinEdit').value = ''; $('#pinView').value = '';
+    hint.textContent = 'Updated. Anyone using an old PIN will need the new one.';
+    toast('Access PINs updated');
+  } catch (err) {
+    hint.textContent = `Could not update: ${String(err.message || err)}`;
+    toast('Could not update PINs', 'bad');
+  } finally {
+    $('#pinSaveBtn').disabled = false;
+  }
+});
 
 initGate(boot);
 

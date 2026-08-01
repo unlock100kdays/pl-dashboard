@@ -699,7 +699,8 @@ body.is-readonly #sheetsSyncNowBtn,
 body.is-readonly .row-actions,
 body.is-readonly .drag-handle,
 body.is-readonly [data-pedit],
-body.is-readonly .empty .primary-btn { display: none !important; }
+body.is-readonly .empty .primary-btn,
+body.is-readonly #accessCardWrap { display: none !important; }
 
 /* settings fields stay visible for reference but cannot be changed */
 body.is-readonly #setCompany,

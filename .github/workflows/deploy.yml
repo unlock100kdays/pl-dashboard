@@ -18,6 +18,9 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html styles.css app.js dist/
+          # _headers controls caching; without it Pages defaults app.js to
+          # max-age=14400 and browsers run a stale bundle after a deploy
+          cp _headers dist/
           ls -la dist
 
       - uses: cloudflare/wrangler-action@v3
