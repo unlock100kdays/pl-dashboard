@@ -18,9 +18,14 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html styles.css app.js dist/
-          # _headers controls caching; without it Pages defaults app.js to
-          # max-age=14400 and browsers run a stale bundle after a deploy
           cp _headers dist/
+          # Stamp the commit SHA into the asset URLs. index.html itself is
+          # served must-revalidate, so a new deploy always delivers new
+          # asset URLs and the browser cannot keep running an old bundle.
+          # Without this, Pages' default max-age=14400 on app.js left
+          # browsers up to four hours behind a deploy.
+          sed -i "s/__BUILD__/${GITHUB_SHA::7}/g" dist/index.html
+          grep -o 'app.js?v=[a-f0-9]*' dist/index.html
           ls -la dist
 
       - uses: cloudflare/wrangler-action@v3
