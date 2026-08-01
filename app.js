@@ -3240,6 +3240,38 @@ function initGate(onUnlock) {
 let apiPin = '';          // sent as X-Dashboard-Pin on every API call
 let userRole = 'view';    // 'edit' | 'view' — authoritative copy lives server-side
 
+/** Locks the dashboard back behind the PIN screen.
+ *  Saves are debounced ~600ms, so an edit made just before clicking
+ *  Lock could still be in flight — flush it first rather than dropping
+ *  someone's last change. localStorage is left alone: it is only an
+ *  offline cache of data that already lives on the server, and the next
+ *  person to unlock re-reads from there anyway. */
+async function logout() {
+  const btn = $('#logoutBtn');
+  if (btn) btn.disabled = true;
+  try {
+    if (userRole === 'edit' && serverAvailable) {
+      clearTimeout(pushTimer);
+      await doPush();
+    }
+  } catch { /* locking must not be blocked by a failed save */ }
+  sessionStorage.removeItem(GATE_KEY);
+  sessionStorage.removeItem(ROLE_KEY);
+  apiPin = '';
+  userRole = 'view';
+  location.reload();      // cleanest reset — the gate reappears on boot
+}
+
+$('#logoutBtn')?.addEventListener('click', async () => {
+  if (userRole === 'edit' && pushing) {
+    // a save is mid-flight; confirm rather than risk looking like data loss
+    if (!(await confirmAction('Lock the dashboard?', 'A change is still saving. It will finish before locking.'))) {
+      return;
+    }
+  }
+  logout();
+});
+
 /* ── change PINs from Settings (editors only) ──────────── */
 $('#pinSaveBtn')?.addEventListener('click', async () => {
   const hint = $('#pinHint');
